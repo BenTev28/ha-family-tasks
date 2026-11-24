@@ -1,0 +1,36 @@
+name: New task service
+description: Propose support for another task service (Todoist, Vikunja, …).
+labels: ["new service"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Each service is an adapter behind the same interface. Please read docs/ARCHITECTURE.md (§3 capabilities, §6 checklist) first.
+  - type: input
+    id: service
+    attributes:
+      label: Service
+    validations:
+      required: true
+  - type: textarea
+    id: mapping
+    attributes:
+      label: Capability mapping
+      description: For each feature, is it native, emulated or none on this service — and how?
+      value: |
+        - Assignees:
+        - Priority:
+        - Recurrence:
+        - Notes:
+        - Due time:
+        - Conflict detection:
+        - Change detection (delta/sync):
+        - Auth:
+    validations:
+      required: true
+  - type: checkboxes
+    id: willing
+    attributes:
+      label: Contribution
+      options:
+        - label: I'd like to implement this adapter myself

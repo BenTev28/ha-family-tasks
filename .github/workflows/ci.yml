@@ -17,8 +17,6 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
-          # private repo / no brands entry / no topics yet
-          ignore: brands topics description
 
   lint:
     runs-on: ubuntu-latest

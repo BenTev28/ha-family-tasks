@@ -1,0 +1,57 @@
+name: Bug report
+description: Something doesn't work as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! **Never paste passwords, app passwords, tokens or server URLs that contain credentials.** Diagnostics downloaded from Home Assistant are already redacted.
+  - type: dropdown
+    id: service
+    attributes:
+      label: Task service
+      options:
+        - CalDAV — Nextcloud
+        - CalDAV — other server (say which below)
+        - Microsoft To Do
+        - Google Tasks
+        - Home Assistant to-do list
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Family Tasks version, Home Assistant version, install type (OS, Container, …)
+      placeholder: "family_tasks 0.1.0, Home Assistant 2026.11.1, Container"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Add a task in the card assigned to …
+        2. …
+  - type: textarea
+    id: other_clients
+    attributes:
+      label: Other apps involved
+      description: e.g. Tasks.org + DAVx5, Thunderbird, Nextcloud Tasks web, the Microsoft To Do app.
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Settings → Devices & services → Family Tasks → ⋮ → Download diagnostics. Attach the file or paste it.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant lines from Settings → System → Logs (enable debug logging for `custom_components.family_tasks` if you can).
+      render: text

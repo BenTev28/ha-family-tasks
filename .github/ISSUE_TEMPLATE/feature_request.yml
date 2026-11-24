@@ -1,0 +1,23 @@
+name: Feature request
+description: Suggest an improvement to the card, actions, entities or events.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Family Tasks keeps **one interface for every task service**. New features should work across services (or degrade cleanly via capabilities). See docs/ARCHITECTURE.md.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+  - type: textarea
+    id: services
+    attributes:
+      label: Which task services would this need to work with?
+      description: How might it map to CalDAV, Microsoft To Do, Google Tasks and Home Assistant to-do lists?

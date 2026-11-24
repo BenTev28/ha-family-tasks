@@ -4,7 +4,12 @@
   "after_dependencies": [
     "frontend"
   ],
-  "codeowners": [],
+  "categories": [
+    "productivity_information.calendars_todos"
+  ],
+  "codeowners": [
+    "@BenTev28"
+  ],
   "config_flow": true,
   "dependencies": [
     "http",

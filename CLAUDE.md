@@ -13,6 +13,15 @@ A Home Assistant custom integration (`custom_components/family_tasks`): shared f
 7. **Security:** never log or expose passwords, tokens or credential-bearing URLs (nothing at INFO or above; redact diagnostics). Never ask the user to paste secrets into chat.
 8. **Generic by default:** no personal hostnames, usernames or list names in code or defaults. This is meant for any HA user.
 
+## Workflow
+
+- Commit as you go with clear messages, and push. `main` must always pass CI.
+- One long-running branch per planned service: `backend/ha-todo` (next), `backend/microsoft-todo`, `backend/google-tasks`. Merge them to `main` through a pull request when done.
+- Record significant design decisions in `docs/decisions/NNNN-title.md`.
+- Contributor-facing rules are in `CONTRIBUTING.md`; keep them consistent with this file.
+- Bump `manifest.json` `version` before a release. The GitHub release tag must match it (`vX.Y.Z`); `release.yml` checks this.
+- The GitHub account name is going to change: don't hard-code the account name anywhere new; derive it with `gh api user -q .login`.
+
 ## Commands
 
 - `./scripts_test.sh [pytest args]`: ruff + tests in a Python 3.14 container with a throwaway Radicale.
