@@ -8,7 +8,7 @@ from typing import Any
 from dateutil.rrule import rrulestr
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse, callback
-from homeassistant.exceptions import ServiceValidationError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.util import dt as dt_util
 import voluptuous as vol
@@ -47,6 +47,7 @@ UPDATE_SCHEMA = vol.Schema(
     }
 )
 UID_SCHEMA = vol.Schema({vol.Required("uid"): cv.string})
+REFRESH_SCHEMA = vol.Schema({vol.Optional("list"): cv.entity_domain("todo")})
 GET_SCHEMA = vol.Schema(
     {
         vol.Optional("list"): cv.entity_domain("todo"),
@@ -187,6 +188,17 @@ def async_setup_services(hass: HomeAssistant) -> None:
     async def get_tasks(call: ServiceCall) -> ServiceResponse:
         return {"tasks": query_tasks(hass, **call.data)}
 
+    async def refresh(call: ServiceCall) -> None:
+        # Fetch now instead of waiting for the next poll. A list refreshes the
+        # whole account it belongs to (one coordinator polls all its lists).
+        targets = [_for_list(hass, call.data["list"])[0]] if "list" in call.data else coordinators(hass)
+        for coordinator in targets:
+            await coordinator.async_refresh()
+            if not coordinator.last_update_success:
+                # The cause is logged by the coordinator; don't echo it here, as
+                # backend errors can carry server URLs.
+                raise HomeAssistantError(translation_domain=DOMAIN, translation_key="refresh_failed")
+
     for name, handler, schema, response in (
         ("add_task", add_task, ADD_SCHEMA, SupportsResponse.OPTIONAL),
         ("update_task", update_task, UPDATE_SCHEMA, SupportsResponse.OPTIONAL),
@@ -194,6 +206,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
         ("reopen_task", reopen_task, UID_SCHEMA, SupportsResponse.OPTIONAL),
         ("delete_task", delete_task, UID_SCHEMA, SupportsResponse.OPTIONAL),
         ("get_tasks", get_tasks, GET_SCHEMA, SupportsResponse.ONLY),
+        ("refresh", refresh, REFRESH_SCHEMA, SupportsResponse.NONE),
     ):
         hass.services.async_register(DOMAIN, name, handler, schema=schema, supports_response=response)
 

@@ -20,7 +20,7 @@ These are the integration's interface. A backend must **never** add, remove or r
 | Surface | Contract |
 |---|---|
 | Entities | `todo.<list>` (one per selected list), `sensor.<tag>_open_family_tasks`, `binary_sensor.<tag>_has_overdue_family_tasks` |
-| Actions | `family_tasks.add_task`, `update_task`, `complete_task`, `reopen_task`, `delete_task`, `get_tasks`, with the fields and responses in `services.yaml` |
+| Actions | `family_tasks.add_task`, `update_task`, `complete_task`, `reopen_task`, `delete_task`, `get_tasks`, `refresh`, with the fields and responses in `services.yaml` |
 | Events | `family_tasks_task_added`, `family_tasks_task_completed` (with `recurring`), `family_tasks_task_assigned` (with `persons`, `tags`), fired for changes from any client |
 | Websocket | `family_tasks/config` → people, lists (each with `service` and `capabilities`), `completed_days`; `family_tasks/subscribe` → task snapshots |
 | Task object | `uid, list, summary, description, status, due, due_has_time, completed, overdue, assignees, assignee_tags, other_tags, priority, rrule, etag, has_alarm, parent_uid` (`services.task_to_dict`) |

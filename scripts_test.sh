@@ -18,5 +18,6 @@ docker run --rm --network container:ft-radicale -v "$PWD:/src" -w /src \
   -e RADICALE_URL=http://127.0.0.1:5232 python:3.14-slim bash -c '
     set -e
     pip install -q -r requirements_test.txt ruff >/dev/null 2>&1
-    ruff check . && ruff format --check .
+    ruff check .
+    ruff format --check .
     python -m pytest -q -p no:cacheprovider "$@"' _ "$@"

@@ -217,7 +217,12 @@ ha-card { display: flex; flex-direction: column; height: 100%; overflow: hidden;
   border-radius: 24px; border: 1px solid var(--divider-color); background: transparent;
   color: var(--primary-text-color); font-size: 1rem; }
 .add { background: var(--primary-color); color: var(--text-primary-color, #fff); border-color: transparent; font-weight: 500; }
-.add:disabled { opacity: 0.5; cursor: default; }
+.add:disabled, .hbtn:disabled { opacity: 0.5; cursor: default; }
+.hbtn.icon { padding: 0; width: 48px; justify-content: center; }
+.hbtn.busy { cursor: default; }
+.hbtn.busy ha-icon { animation: ft-spin 1s linear infinite; }
+@keyframes ft-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .hbtn.busy ha-icon { animation: none; opacity: 0.5; } }
 
 .filters { display: flex; gap: 8px; padding: 4px 16px 12px; overflow-x: auto; scrollbar-width: none; flex: none; }
 .filters::-webkit-scrollbar { display: none; }
@@ -598,6 +603,23 @@ class FamilyTasksCard extends HTMLElement {
     }
   }
 
+  /** Fetch from the service now; the subscription delivers the result. */
+  async _refresh() {
+    if (this._refreshing || !this._hass) return;
+    this._refreshing = true;
+    this._refreshBtn.classList.add("busy");
+    this._refreshBtn.setAttribute("aria-busy", "true");
+    try {
+      await this._hass.callService(DOMAIN, "refresh", { list: this._config.entity });
+    } catch (err) {
+      this._toast(`Couldn't sync: ${errMsg(err)}`);
+    } finally {
+      this._refreshing = false;
+      this._refreshBtn.classList.remove("busy");
+      this._refreshBtn.removeAttribute("aria-busy");
+    }
+  }
+
   _openDialog(task) {
     if (!this._ftConfig || !this._hass) return;
     this._closeDialog();
@@ -626,6 +648,11 @@ class FamilyTasksCard extends HTMLElement {
     this._built = true;
     this._titleEl = h("div", { class: "title" });
     this._sortBtn = h("button", { class: "hbtn", title: "Change sort order", onclick: () => this._toggleSort() });
+    this._refreshBtn = h(
+      "button",
+      { class: "hbtn icon", title: "Sync now", "aria-label": "Sync now", onclick: () => this._refresh() },
+      icon("mdi:refresh"),
+    );
     this._addBtn = h(
       "button",
       { class: "add", onclick: () => this._openDialog(null) },
@@ -637,7 +664,7 @@ class FamilyTasksCard extends HTMLElement {
     this._card = h(
       "ha-card",
       null,
-      h("div", { class: "header" }, this._titleEl, h("div", { class: "hactions" }, this._sortBtn, this._addBtn)),
+      h("div", { class: "header" }, this._titleEl, h("div", { class: "hactions" }, this._refreshBtn, this._sortBtn, this._addBtn)),
       this._filtersEl,
       this._listEl,
     );
@@ -672,6 +699,7 @@ class FamilyTasksCard extends HTMLElement {
       h("span", null, this._sort === "due" ? "By date" : "By person"),
     );
     this._addBtn.disabled = !this._ftConfig;
+    this._refreshBtn.disabled = !this._ftConfig;
     this._renderFilters();
     this._renderList();
   }
