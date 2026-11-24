@@ -8,7 +8,7 @@ Tasks stay in the service you already use, so phones and other apps keep working
 |---|---|---|
 | CalDAV (Nextcloud, Radicale, Fastmail, iCloud, Baïkal, …) | ✅ available | `CATEGORIES` on the task (visible to Tasks.org, Thunderbird, Nextcloud Tasks…) |
 | Microsoft To Do | planned | task categories |
-| Google Tasks | planned | to be decided (notes marker or Home Assistant only) |
+| Google Tasks | planned | a last line in the notes, e.g. `Assigned to: Owen, Micah` |
 | Home Assistant to-do lists (Local To-do, …) | planned | Home Assistant only |
 
 With CalDAV and Tasks.org on Android, each person's "My tasks" filter (personal list OR tasks tagged with their name) picks up assignments made anywhere.

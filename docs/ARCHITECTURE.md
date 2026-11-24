@@ -80,10 +80,10 @@ Facts were researched in Nov 2026. Items marked ⚠ must be confirmed against th
 | Feature | CalDAV (Nextcloud, Radicale, Fastmail, iCloud…) | Microsoft To Do (Graph) | Google Tasks (API v1) | HA to-do entity (Local To-do, …) |
 |---|---|---|---|---|
 | Lists | collections with VTODO (PROPFIND discovery) | `/me/todo/lists` (shared lists via `Tasks.ReadWrite.Shared`) | `tasklists` (lists can't be shared between accounts) | any `todo.*` entity the user picks |
-| **Assignees** | native: `CATEGORIES` | native: `categories` ⚠ (Outlook category names; check that arbitrary values are accepted and the app shows them) | **decision needed**: marker line in `notes` (visible on phones, editable) or emulated | emulated |
+| **Assignees** | native: `CATEGORIES` | native: `categories` ⚠ (Outlook category names; check that arbitrary values are accepted and the app shows them) | native: marker line `Assigned to: …` at the end of `notes` ([decision 0001](decisions/0001-google-tasks-assignees-in-notes.md)) | emulated |
 | Priority | native: `PRIORITY` 1/5/9 | native: `importance` high/normal/low (medium = normal) | emulated | emulated |
 | Recurrence | native: `RRULE`; completing advances in place (Tasks.org rule) | native: `patternedRecurrence` (map the RRULE subset; ⚠ the service may spawn a new task on completion) | none via API (recurring tasks are invisible as such) → emulated with the core engine | emulated with the core engine |
-| Notes | `DESCRIPTION` | `body` (text) | `notes` (minus any marker) | `description` |
+| Notes | `DESCRIPTION` | `body` (text) | `notes` without the assignee marker line | `description` |
 | Due time | yes (`TZID`) | date-only ⚠ (time could go to `reminderDateTime`) | date-only | yes |
 | Subtasks | `RELATED-TO` | `checklistItems` (a different model, not reported) | `parent` | no |
 | Conflicts | `If-Match` ETag, re-apply once | `@odata.etag` + `If-Match` ⚠; else compare `lastModifiedDateTime` before writing | `etag` ⚠; else compare `updated` before writing | in-process (entity actions) |
