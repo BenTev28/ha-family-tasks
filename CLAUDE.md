@@ -15,7 +15,7 @@ A Home Assistant custom integration (`custom_components/family_tasks`): shared f
 
 ## Workflow
 
-- Commit as you go with clear messages, and push. `main` must always pass CI.
+- Every change reaches `main` through a pull request, never a direct push. Work on a branch, commit as you go with clear messages, push the branch, and open a PR. `main` is protected: the required CI checks (`tests`, `lint`, `card-lint`, `hassfest`, `hacs`) must pass and a code owner must approve. Don't merge with `--admin` (bypassing review) unless the user says so for that PR.
 - One long-running branch per planned service: `backend/ha-todo` (next), `backend/microsoft-todo`, `backend/google-tasks`. Merge them to `main` through a pull request when done.
 - Record significant design decisions in `docs/decisions/NNNN-title.md`.
 - Contributor-facing rules are in `CONTRIBUTING.md`; keep them consistent with this file.
