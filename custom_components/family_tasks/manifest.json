@@ -10,10 +10,10 @@
     "http",
     "websocket_api"
   ],
-  "documentation": "https://github.com/OWNER/ha-family-tasks",
+  "documentation": "https://github.com/BenTev28/ha-family-tasks",
   "integration_type": "service",
   "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/OWNER/ha-family-tasks/issues",
+  "issue_tracker": "https://github.com/BenTev28/ha-family-tasks/issues",
   "requirements": [
     "icalendar>=6.1.0"
   ],
