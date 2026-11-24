@@ -826,9 +826,6 @@ class TaskDialog {
     // What the list's service supports (same contract for every service;
     // only the available controls differ). See docs/ARCHITECTURE.md §3.
     this.caps = card._caps();
-    const label = (text, key) =>
-      this.caps[key] === "emulated" ? `${text} · Home Assistant only` : text;
-    const supported = (key) => this.caps[key] !== "none";
     this.busy = false;
     const due = task ? dueParts(task) : { date: "", time: "" };
     const rr = parseRrule(task && task.rrule);
@@ -866,6 +863,9 @@ class TaskDialog {
   build() {
     const card = this.card;
     const s = this.state;
+    const label = (text, key) =>
+      this.caps[key] === "emulated" ? `${text} · Home Assistant only` : text;
+    const supported = (key) => this.caps[key] !== "none";
 
     // Title
     this.titleInput = h("input", {

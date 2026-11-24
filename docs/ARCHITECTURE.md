@@ -115,4 +115,4 @@ Facts were researched in Nov 2026. Items marked ⚠ must be confirmed against th
 5. Keep untouched data intact: never drop properties or tags the integration doesn't manage.
 6. Detect conflicts, or document the residual last-write-wins window.
 7. No credentials, tokens or account URLs in logs at INFO or above, or in diagnostics. List them in `redact`.
-8. Pass the contract test suite. Add a row to the mapping table above and a section to the README.
+8. Pass the contract test suite. Add a row to the mapping table above, a `docs/services/<key>.md` page, and a row in the README services table.
