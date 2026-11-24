@@ -28,6 +28,17 @@ You need Docker. The test script runs everything in a Python 3.14 container, alo
 docker run --rm -v "$PWD:/github/workspace" ghcr.io/home-assistant/hassfest
 ```
 
+The tests cover these areas:
+- Lossless round-trip of a Tasks.org-style task (`tests/fixtures/tasks_org_sample.ics`: private properties, two reminders, a subtask link and a repeat rule).
+- Adding and removing assignees while keeping other tags.
+- Simultaneous-edit conflicts, both merged and persistent.
+- Repeat rules: COUNT, UNTIL and date-only.
+- Sync-token deletes, sensors and events.
+- The setup, options and reconfigure flows, and capability handling.
+- No credentials in logs or diagnostics.
+
+The Tasks.org fixture is synthetic, modelled on Tasks.org's output. A real export of a phone-created task (Nextcloud web → task → ⋮ → Download) is welcome as an extra fixture. Remove anything personal from it first.
+
 To try it in Home Assistant, copy `custom_components/family_tasks` into your config's `custom_components/` folder and restart.
 
 ## Adding a task service

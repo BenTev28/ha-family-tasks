@@ -7,7 +7,7 @@ A Home Assistant custom integration (`custom_components/family_tasks`): shared f
 1. **One interface for every service.** Entities, actions (fields and responses), events (payloads), websocket commands, the task object, the card and the options are the same no matter which service a list lives on. Only the backend's *mapping* of parameters and settings differs.
 2. **Each service is an adapter** under `backends/<key>/` implementing `TaskBackend` + `BackendSpec` (`backends/base.py`). Service-specific code, wording and settings never leak into `model.py`, `coordinator.py`, `services.py`, `websocket_api.py`, the entities or the card.
 3. **Differences are expressed as capabilities** (`native` / `emulated` / `none`, plus flags). The card hides what's unsupported, and actions reject `none` fields with `unsupported_field`. Never silently drop data.
-4. **Contract changes are additive and apply to all backends at once.** Update `docs/ARCHITECTURE.md` §1 and the README when you make one.
+4. **Contract changes are additive and apply to all backends at once.** Update `docs/ARCHITECTURE.md` §1 and `docs/usage.md` when you make one.
 5. **Planned services:** CalDAV (done), Microsoft To Do, Google Tasks, HA to-do entities (Local To-do). Keep the interface workable for all four.
 6. **Data integrity:** edit only what changed and keep unknown properties and tags. Detect conflicts, or document the last-write-wins window.
 7. **Security:** never log or expose passwords, tokens or credential-bearing URLs (nothing at INFO or above; redact diagnostics). Never ask the user to paste secrets into chat.
@@ -19,6 +19,7 @@ A Home Assistant custom integration (`custom_components/family_tasks`): shared f
 - One long-running branch per planned service: `backend/ha-todo` (next), `backend/microsoft-todo`, `backend/google-tasks`. Merge them to `main` through a pull request when done.
 - Record significant design decisions in `docs/decisions/NNNN-title.md`.
 - Contributor-facing rules are in `CONTRIBUTING.md`; keep them consistent with this file.
+- Docs layout: the README is a short front page (HACS renders it). User reference is in `docs/usage.md`, per-service details in `docs/services/<key>.md`, design in `docs/ARCHITECTURE.md`.
 - Bump `manifest.json` `version` before a release. The GitHub release tag must match it (`vX.Y.Z`); `release.yml` checks this.
 - The GitHub account name is going to change: don't hard-code the account name anywhere new; derive it with `gh api user -q .login`.
 
