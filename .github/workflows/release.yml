@@ -11,7 +11,7 @@ jobs:
   check-version:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Tag matches manifest version, and betas are pre-releases
         env:
           PRERELEASE: ${{ github.event.release.prerelease }}
