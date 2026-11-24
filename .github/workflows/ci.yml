@@ -48,7 +48,7 @@ jobs:
           docker cp tests/radicale.conf ${{ job.services.radicale.id }}:/config/config
           docker restart ${{ job.services.radicale.id }}
           for i in $(seq 1 30); do curl -sf http://127.0.0.1:5232/.web/ >/dev/null && break; sleep 1; done
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
       - run: pip install -r requirements_test.txt
