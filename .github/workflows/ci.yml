@@ -25,6 +25,16 @@ jobs:
       - uses: astral-sh/ruff-action@v3
       - run: ruff format --check .
 
+  card-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+      - run: npm install --no-save --no-package-lock eslint@9.39.5 globals@16.5.0
+      - run: npx eslint
+
   tests:
     runs-on: ubuntu-latest
     services:
