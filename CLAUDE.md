@@ -20,7 +20,7 @@ A Home Assistant custom integration (`custom_components/family_tasks`): shared f
 - Record significant design decisions in `docs/decisions/NNNN-title.md`.
 - Contributor-facing rules are in `CONTRIBUTING.md`; keep them consistent with this file.
 - Docs layout: the README is a short front page (HACS renders it). User reference is in `docs/usage.md`, per-service details in `docs/services/<key>.md`, design in `docs/ARCHITECTURE.md`.
-- Bump `manifest.json` `version` before a release. The GitHub release tag must match it (`vX.Y.Z`); `release.yml` checks this.
+- Releases come from `main` (see CONTRIBUTING "Releases"). Bump `manifest.json` `version` and `const.VERSION` together. Betas (`X.Y.Zb1`) are GitHub pre-releases, and `release.yml` enforces both rules. Label PRs for the generated release notes (`.github/release.yml`).
 - The GitHub account name is going to change: don't hard-code the account name anywhere new; derive it with `gh api user -q .login`.
 
 ## Commands
