@@ -10,7 +10,7 @@ Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) before changing anything struc
 
 ## Branches and pull requests
 
-- `main` is always releasable. CI (tests, lint, hassfest, HACS validation) must pass before a change merges.
+- `main` is always releasable and is protected: every change goes through a pull request, with no direct pushes. CI (tests, Python lint, card lint, hassfest, HACS validation) must pass, and a code owner must approve, before a change merges.
 - Work on a branch and open a pull request against `main`:
   - fork the repo if you aren't a collaborator
   - `fix/…`, `feat/…` or `docs/…` for general work
@@ -62,7 +62,7 @@ Label pull requests so the release notes sort themselves: `bug`, `enhancement`, 
 
 Releases are cut from `main`; there are no release branches. Versions follow `MAJOR.MINOR.PATCH`, with betas as `X.Y.Zb1`, `b2`, …
 
-1. Set `version` in `manifest.json` **and** `VERSION` in `const.py` (a test keeps them equal). Commit to `main`, and wait for CI to pass.
+1. Set `version` in `manifest.json` **and** `VERSION` in `const.py` (a test keeps them equal). Merge it to `main` through a pull request, and wait for CI to pass on `main`.
 2. Beta: create a GitHub release with tag `vX.Y.Zb1`, tick **Set as a pre-release**, and use **Generate release notes**. HACS shows it only to users who enable beta versions.
 3. Test it on a real Home Assistant. Fix, then repeat with `b2` and onwards as needed.
 4. Final: set the version to `X.Y.Z`, and publish a normal (not pre-release) release `vX.Y.Z`.
