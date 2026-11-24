@@ -1,31 +1,28 @@
-"""Coordinator: polls CalDAV collections and performs conflict-safe writes."""
+"""Coordinator: polls a backend and applies writes. Service-neutral."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Awaitable
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, tzinfo
+from datetime import datetime, timedelta
 import logging
-from typing import Any
-import uuid
-from zoneinfo import ZoneInfo
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_PASSWORD, CONF_URL, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
-from .client import (
-    CalDavAuthError,
-    CalDavClient,
-    CalDavError,
-    NotFound,
-    PreconditionFailed,
-    SyncTokenInvalid,
+from .backends import CONF_BACKEND, get_spec
+from .backends.base import (
+    BackendAuthError,
+    BackendError,
+    Capabilities,
+    ConflictError,
+    Support,
+    TaskBackend,
+    TaskNotFoundError,
 )
 from .const import (
     ATTR_COLOR,
@@ -35,39 +32,41 @@ from .const import (
     CONF_COMPLETED_DAYS,
     CONF_LISTS,
     CONF_SCAN_INTERVAL,
-    CONF_VERIFY_SSL,
     DEFAULT_COMPLETED_DAYS,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     EVENT_TASK_ADDED,
     EVENT_TASK_ASSIGNED,
     EVENT_TASK_COMPLETED,
-    PRODID,
 )
-from .ics import ICalDocument
-from .task import Task, TaskEditor, new_task_ical
+from .model import Task, TaskChange, WriteContext
 
 _LOGGER = logging.getLogger(__name__)
 
 type FamilyTasksConfigEntry = ConfigEntry[FamilyTasksCoordinator]
-type Mutation = Callable[[TaskEditor], None]
+
+# TaskChange field -> Capabilities attribute
+_FIELD_CAPABILITY = {
+    "assignees": "assignees",
+    "priority": "priority",
+    "rrule": "recurrence",
+    "description": "description",
+}
 
 
 @dataclass
 class ListState:
-    """Cached state of one collection."""
+    """Cached snapshot of one list."""
 
-    path: str
+    id: str
     name: str
-    tasks: dict[str, Task] = field(default_factory=dict)  # href -> Task
-    ctag: str | None = None
-    sync_token: str | None = None
+    tasks: dict[str, Task] = field(default_factory=dict)  # task id -> Task
     loaded: bool = False
 
 
 @dataclass
 class Assignee:
-    """Person entity <-> CATEGORIES tag."""
+    """Person entity <-> tag."""
 
     person: str
     tag: str
@@ -75,7 +74,7 @@ class Assignee:
 
 
 class FamilyTasksCoordinator(DataUpdateCoordinator[dict[str, ListState]]):
-    """Owns the CalDAV client and the cached task lists of one config entry."""
+    """Owns the backend and the cached lists of one config entry."""
 
     config_entry: FamilyTasksConfigEntry
 
@@ -89,26 +88,20 @@ class FamilyTasksCoordinator(DataUpdateCoordinator[dict[str, ListState]]):
             update_interval=timedelta(seconds=interval),
             always_update=True,
         )
-        self.client = CalDavClient(
-            async_get_clientsession(hass, verify_ssl=entry.data.get(CONF_VERIFY_SSL, True)),
-            entry.data[CONF_URL],
-            entry.data[CONF_USERNAME],
-            entry.data[CONF_PASSWORD],
-            entry.data.get(CONF_VERIFY_SSL, True),
-        )
+        self.spec = get_spec(entry.data[CONF_BACKEND])
+        self.backend: TaskBackend = self.spec.create(hass, entry.data)
         self.lists: dict[str, ListState] = {
-            path: ListState(path=path, name=name) for path, name in entry.options.get(CONF_LISTS, {}).items()
+            list_id: ListState(id=list_id, name=name) for list_id, name in entry.options.get(CONF_LISTS, {}).items()
         }
         self.assignees: list[Assignee] = [
             Assignee(a[ATTR_PERSON], a[ATTR_TAG], a.get(ATTR_COLOR)) for a in entry.options.get(CONF_ASSIGNEES, [])
         ]
         self.completed_days: int = entry.options.get(CONF_COMPLETED_DAYS, DEFAULT_COMPLETED_DAYS)
-        self._version = 0  # bumps on every data change (for websocket subscribers)
 
-    # -- helpers -------------------------------------------------------------
+    # -- helpers ---------------------------------------------------------------
     @property
-    def tz(self) -> tzinfo:
-        return ZoneInfo(self.hass.config.time_zone)
+    def capabilities(self) -> Capabilities:
+        return self.backend.capabilities
 
     @property
     def tag_to_person(self) -> dict[str, str]:
@@ -122,24 +115,26 @@ class FamilyTasksCoordinator(DataUpdateCoordinator[dict[str, ListState]]):
     def managed_tags(self) -> list[str]:
         return [a.tag for a in self.assignees]
 
-    def list_unique_id(self, path: str) -> str:
-        return f"{self.config_entry.entry_id}_{path}"
+    def context(self) -> WriteContext:
+        return WriteContext(managed_tags=self.managed_tags, tz=dt_util.get_default_time_zone(), now=dt_util.utcnow())
 
-    def list_entity_id(self, path: str) -> str | None:
-        return er.async_get(self.hass).async_get_entity_id("todo", DOMAIN, self.list_unique_id(path))
+    def list_unique_id(self, list_id: str) -> str:
+        return f"{self.config_entry.entry_id}_{list_id}"
 
-    def path_for_entity(self, entity_id: str) -> str | None:
+    def list_entity_id(self, list_id: str) -> str | None:
+        return er.async_get(self.hass).async_get_entity_id("todo", DOMAIN, self.list_unique_id(list_id))
+
+    def list_for_entity(self, entity_id: str) -> str | None:
         entry = er.async_get(self.hass).async_get(entity_id)
         if entry is None or entry.config_entry_id != self.config_entry.entry_id:
             return None
         prefix = f"{self.config_entry.entry_id}_"
         return entry.unique_id.removeprefix(prefix) if entry.unique_id.startswith(prefix) else None
 
-    def find(self, uid: str) -> tuple[ListState, Task] | None:
+    def find(self, task_id: str) -> Task | None:
         for state in self.lists.values():
-            for task in state.tasks.values():
-                if task.uid == uid:
-                    return state, task
+            if task_id in state.tasks:
+                return state.tasks[task_id]
         return None
 
     def visible(self, task: Task, now: datetime) -> bool:
@@ -148,104 +143,58 @@ class FamilyTasksCoordinator(DataUpdateCoordinator[dict[str, ListState]]):
             return True
         if self.completed_days <= 0:
             return False
-        # completed without a timestamp: fall back to LAST-MODIFIED
-        when = task.last_modified if task.completed_at is None else task.completed_at
+        # completed without a timestamp: fall back to last update
+        when = task.updated if task.completed_at is None else task.completed_at
         return when is not None and now - when <= timedelta(days=self.completed_days)
 
     def assignees_of(self, task: Task) -> list[str]:
         mapping = self.tag_to_person
-        return list(dict.fromkeys(mapping[c.lower()] for c in task.categories if c.lower() in mapping))
+        return list(dict.fromkeys(mapping[t.lower()] for t in task.tags if t.lower() in mapping))
 
-    # -- polling ---------------------------------------------------------------
+    def unsupported(self, change: TaskChange) -> list[str]:
+        """Fields in ``change`` that this backend cannot store at all."""
+        return sorted(
+            name
+            for name in change.touched()
+            if name in _FIELD_CAPABILITY and getattr(self.capabilities, _FIELD_CAPABILITY[name]) is Support.NONE
+        )
+
+    # -- polling -----------------------------------------------------------------
     async def _async_update_data(self) -> dict[str, ListState]:
-        before = {path: {t.uid: t for t in state.tasks.values()} for path, state in self.lists.items() if state.loaded}
+        before = {lid: dict(state.tasks) for lid, state in self.lists.items() if state.loaded}
         try:
             for state in self.lists.values():
-                await self._refresh_list(state)
-        except CalDavAuthError as err:
+                state.tasks = await self.backend.async_fetch(state.id)
+                state.loaded = True
+        except BackendAuthError as err:
             raise ConfigEntryAuthFailed(str(err)) from None
-        except CalDavError as err:
+        except BackendError as err:
             raise UpdateFailed(str(err)) from None
-        changed = self._fire_events(before)
-        if changed:
-            self._version += 1
+        self._fire_events(before)
         return self.lists
 
-    async def _refresh_list(self, state: ListState) -> None:
-        if not state.loaded:
-            await self._full_fetch(state)
-            return
-        if state.sync_token:
-            try:
-                result = await self.client.sync(state.path, state.sync_token)
-            except SyncTokenInvalid:
-                _LOGGER.debug("sync token invalid for %s; full refetch", state.path)
-                await self._full_fetch(state)
-                return
-            except CalDavError as err:
-                if isinstance(err, CalDavAuthError):
-                    raise
-                _LOGGER.debug("sync-collection failed (%s); falling back to ctag", err)
-                state.sync_token = None
-            else:
-                for href in result.deleted:
-                    state.tasks.pop(href, None)
-                if result.changed:
-                    for res in await self.client.multiget(state.path, result.changed):
-                        self._store(state, res.href, res.etag, res.data)
-                state.sync_token = result.token or state.sync_token
-                return
-        ctag, token = await self.client.collection_state(state.path)
-        if ctag is None or ctag != state.ctag:
-            await self._full_fetch(state)
-        state.sync_token = token or state.sync_token
-
-    async def _full_fetch(self, state: ListState) -> None:
-        ctag, token = await self.client.collection_state(state.path)
-        resources = await self.client.fetch_all(state.path)
-        state.tasks = {}
-        for res in resources:
-            self._store(state, res.href, res.etag, res.data)
-        state.ctag, state.sync_token, state.loaded = ctag, token, True
-
-    def _store(self, state: ListState, href: str, etag: str | None, data: str | None) -> None:
-        if not data:
-            state.tasks.pop(href, None)
-            return
-        try:
-            state.tasks[href] = Task.from_ical(href, etag, data, self.tz)
-        except ValueError as err:
-            _LOGGER.debug("skipping unparsable resource %s: %s", href, err)
-            state.tasks.pop(href, None)
-
-    def _fire_events(self, before: dict[str, dict[str, Task]]) -> bool:
-        """Diff against the previous snapshot and fire events. Returns True if anything changed."""
-        changed = False
-        for path, state in self.lists.items():
-            old = before.get(path)
-            new = {t.uid: t for t in state.tasks.values()}
+    def _fire_events(self, before: dict[str, dict[str, Task]]) -> None:
+        """Diff against the previous snapshot; fires for changes from any client."""
+        for list_id, state in self.lists.items():
+            old = before.get(list_id)
             if old is None:
-                changed = True  # first load: baseline, no events
-                continue
-            if set(old) != set(new):
-                changed = True
-            entity_id = self.list_entity_id(path)
-            for uid, task in new.items():
-                prev = old.get(uid)
-                if prev is not None and prev.etag == task.etag and prev.raw == task.raw:
+                continue  # first load is the baseline
+            entity_id = self.list_entity_id(list_id)
+            for task_id, task in state.tasks.items():
+                prev = old.get(task_id)
+                if prev is not None and prev == task:
                     continue
-                changed = True
-                base = {"uid": uid, "summary": task.summary, "list": entity_id}
+                base = {"uid": task_id, "summary": task.summary, "list": entity_id}
+                now_assigned = self.assignees_of(task)
                 if prev is None:
-                    self.hass.bus.async_fire(EVENT_TASK_ADDED, {**base, "assignees": self.assignees_of(task)})
-                    added = self.assignees_of(task)
+                    self.hass.bus.async_fire(EVENT_TASK_ADDED, {**base, "assignees": now_assigned})
+                    added = now_assigned
                 else:
                     if task.completed and not prev.completed:
                         self.hass.bus.async_fire(
-                            EVENT_TASK_COMPLETED,
-                            {**base, "assignees": self.assignees_of(task), "recurring": False},
+                            EVENT_TASK_COMPLETED, {**base, "assignees": now_assigned, "recurring": False}
                         )
-                    added = [p for p in self.assignees_of(task) if p not in self.assignees_of(prev)]
+                    added = [p for p in now_assigned if p not in self.assignees_of(prev)]
                 if added:
                     self.hass.bus.async_fire(
                         EVENT_TASK_ASSIGNED,
@@ -253,98 +202,64 @@ class FamilyTasksCoordinator(DataUpdateCoordinator[dict[str, ListState]]):
                             **base,
                             "persons": added,
                             "tags": [self.person_to_tag[p] for p in added],
-                            "assignees": self.assignees_of(task),
+                            "assignees": now_assigned,
                         },
                     )
+
+    # -- writes --------------------------------------------------------------------
+    async def async_create(self, list_id: str, summary: str, change: TaskChange) -> str:
+        if list_id not in self.lists:
+            raise HomeAssistantError(f"List {list_id} is not exposed by this integration")
+        task_id = await self._guard(self.backend.async_create(list_id, summary, change, self.context()))
+        await self.async_refresh()
+        return task_id
+
+    async def async_update(self, task_id: str, change: TaskChange) -> bool:
+        task = self.find(task_id)
+        if task is None:
+            await self.async_refresh()
+            task = self.find(task_id)
+        if task is None:
+            raise HomeAssistantError(f"Task {task_id} not found")
+        was_open = not task.completed
+        changed = await self._guard(self.backend.async_update(task.list_id, task_id, change, self.context()))
+        await self.async_refresh()
+        after = self.find(task_id)
+        if change.completed and was_open and after is not None and not after.completed:
+            # a recurring task advanced to its next occurrence; the diff can't see that as a completion
+            self.hass.bus.async_fire(
+                EVENT_TASK_COMPLETED,
+                {
+                    "uid": task_id,
+                    "summary": after.summary,
+                    "list": self.list_entity_id(after.list_id),
+                    "assignees": self.assignees_of(after),
+                    "recurring": True,
+                },
+            )
         return changed
 
-    @property
-    def version(self) -> int:
-        return self._version
-
-    # -- writes ----------------------------------------------------------------
-    async def async_create(self, path: str, summary: str, mutate: Mutation) -> str:
-        if path not in self.lists:
-            raise HomeAssistantError(f"List {path} is not exposed by this integration")
-        uid = str(uuid.uuid4()).upper()
-        now = dt_util.utcnow()
-        doc = ICalDocument.parse(new_task_ical(uid, summary, now, PRODID))
-        mutate(TaskEditor(doc, self.tz))
-        href = f"{path}{uid}.ics"
-        await self._guard(self.client.put(href, doc.serialize(), etag=None, create=True))
-        await self.async_refresh()
-        return uid
-
-    async def async_mutate(self, uid: str, mutate: Mutation) -> bool:
-        """Read-modify-write one task with If-Match; retry once on 412.
-
-        Returns False when the edit did not change anything.
-        """
-        found = self.find(uid)
-        if found is None:
-            await self.async_refresh()
-            found = self.find(uid)
-        if found is None:
-            raise HomeAssistantError(f"Task {uid} not found")
-        _, task = found
-        raw, etag = task.raw, task.etag
-        for attempt in (1, 2):
-            doc = ICalDocument.parse(raw)
-            editor = TaskEditor(doc, self.tz)
-            mutate(editor)
-            if not editor.changed:
-                return False
-            editor.touch(dt_util.utcnow())
-            try:
-                await self._guard(self.client.put(task.href, doc.serialize(), etag=etag))
-                break
-            except PreconditionFailed:
-                if attempt == 2:
-                    raise HomeAssistantError(
-                        f"Task '{task.summary}' was changed elsewhere at the same time; please reload and try again"
-                    ) from None
-                _LOGGER.debug("412 on %s; refetching and retrying", task.href)
-                fresh = await self._guard(self.client.get(task.href))
-                raw, etag = fresh.data or raw, fresh.etag
-        await self.async_refresh()
-        return True
-
-    async def async_delete(self, uid: str) -> None:
-        found = self.find(uid)
-        if found is None:
-            raise HomeAssistantError(f"Task {uid} not found")
-        _, task = found
+    async def async_delete(self, task_id: str) -> None:
+        task = self.find(task_id)
+        if task is None:
+            raise HomeAssistantError(f"Task {task_id} not found")
         try:
-            await self._guard(self.client.delete(task.href, etag=task.etag))
-        except PreconditionFailed:
-            fresh = await self._guard(self.client.get(task.href))
-            await self._guard(self.client.delete(task.href, etag=fresh.etag))
+            await self._guard(self.backend.async_delete(task.list_id, task_id))
         except HomeAssistantError as err:
-            if not isinstance(err.__cause__, NotFound):
+            if not isinstance(err.__cause__, TaskNotFoundError):
                 raise
         await self.async_refresh()
 
-    async def _guard(self, awaitable: Any) -> Any:
-        """Translate client errors into HomeAssistantError (safe messages)."""
+    async def _guard[T](self, awaitable: Awaitable[T]) -> T:
+        """Translate backend errors into HomeAssistantError (safe messages)."""
         try:
             return await awaitable
-        except PreconditionFailed:
-            raise
-        except CalDavAuthError as err:
+        except ConflictError as err:
+            raise HomeAssistantError(
+                "The task was changed elsewhere at the same time; please reload and try again"
+            ) from err
+        except BackendAuthError as err:
             self.config_entry.async_start_reauth(self.hass)
-            raise HomeAssistantError(f"Nextcloud rejected the credentials: {err}") from err
-        except CalDavError as err:
-            raise HomeAssistantError(f"Nextcloud request failed: {err}") from err
-
-    def fire_recurring_completed(self, task: Task) -> None:
-        """HA advanced a recurring task in place; the diff can't see that as a completion."""
-        self.hass.bus.async_fire(
-            EVENT_TASK_COMPLETED,
-            {
-                "uid": task.uid,
-                "summary": task.summary,
-                "list": self.list_entity_id(next(p for p, s in self.lists.items() if task.href in s.tasks)),
-                "assignees": self.assignees_of(task),
-                "recurring": True,
-            },
-        )
+            raise HomeAssistantError(f"The service rejected the credentials: {err}") from err
+        except BackendError as err:
+            raise HomeAssistantError(f"The service request failed: {err}") from err

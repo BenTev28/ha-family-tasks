@@ -1,8 +1,17 @@
 # Family Tasks for Home Assistant
 
-A custom integration that turns a shared **Nextcloud (CalDAV) task list** into a family to-do list with **assignees**. It ships with a touch-first Lovelace card for a wall display.
+Shared family task lists with **assignees** for Home Assistant. It ships with a touch-first Lovelace card for a wall display.
 
-Assignees are stored as VTODO `CATEGORIES` (`Hannah`, `Rachel`, `Owen`, `Micah`), so Nextcloud stays the single source of truth. An assignment made in Home Assistant, Tasks.org (DAVx5), Nextcloud Tasks or by Claude shows up everywhere. Phones keep their "My tasks" filters (personal list OR tasks tagged with my name) and need no changes.
+Tasks stay in the service you already use, so phones and other apps keep working. Family Tasks adds who-does-what on top. The entities, actions, events and card are **the same whichever service a list lives on**. Each service only differs in which features it can store; see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+| Service | Status | Assignees stored as |
+|---|---|---|
+| CalDAV (Nextcloud, Radicale, Fastmail, iCloud, Baïkal, …) | ✅ available | `CATEGORIES` on the task (visible to Tasks.org, Thunderbird, Nextcloud Tasks…) |
+| Microsoft To Do | planned | task categories |
+| Google Tasks | planned | to be decided (notes marker or Home Assistant only) |
+| Home Assistant to-do lists (Local To-do, …) | planned | Home Assistant only |
+
+With CalDAV and Tasks.org on Android, each person's "My tasks" filter (personal list OR tasks tagged with their name) picks up assignments made anywhere.
 
 ## What you get
 
@@ -21,14 +30,15 @@ Assignees are stored as VTODO `CATEGORIES` (`Hannah`, `Rachel`, `Owen`, `Micah`)
 
 **Manual:** copy `custom_components/family_tasks` into `<config>/custom_components/` and restart.
 
-Then go to **Settings → Devices & services → Add integration → Family Tasks**:
+Then go to **Settings → Devices & services → Add integration → Family Tasks**, pick the service, and connect.
 
-1. **CalDAV URL:** `https://cloud.example.com/remote.php/dav`. It must be `https://` and must not contain a username or password.
-2. **Username:** the account that owns the shared list (for example `household`).
-3. **App password:** create one in Nextcloud under Settings → Security → Devices & sessions. Type it into this form only; it is never logged.
-4. Pick the task lists to expose. *Family To-Do* is preselected.
+**CalDAV:**
+1. **Server URL:** the CalDAV root, for example `https://cloud.example.com/remote.php/dav` for Nextcloud. It must be `https://` and must not contain a username or password.
+2. **Username:** the account that owns the shared list. A dedicated household account that shares the list with everyone works well.
+3. **Password:** use an app password where the service offers one. Type it into this form only; it is never logged.
+4. Pick the task lists to expose. A single list, or lists with "family" in the name, are preselected.
 
-To rotate the app password later, open the integration's ⋮ menu → **Reconfigure**. Entity IDs stay the same.
+To rotate the password later, open the integration's ⋮ menu → **Reconfigure**. Entity IDs stay the same.
 
 ### Options
 
@@ -88,16 +98,17 @@ default_filter: everyone # everyone | unassigned | <tag>
 
 It has a visual editor and follows the active HA theme. Person chips use the colour from the options plus the person entity's picture.
 
-## How data is kept safe
+## How data is kept safe (CalDAV)
 
 - **Read-modify-write on the raw iCalendar.** The editor (`ics.py`) keeps every content line exactly as received and replaces only the properties being edited. `X-` properties, `RELATED-TO` (subtasks), `VALARM`, `RRULE`, unknown tags and so on are untouched. Every write bumps `DTSTAMP`, `LAST-MODIFIED` and `SEQUENCE`.
   - One caveat: calendar data arrives inside a WebDAV XML response, and XML parsing turns CRLF into LF. Output therefore always uses CRLF, as RFC 5545 requires. Apart from line endings, untouched lines are identical.
 - **Conflict-safe writes:** `PUT` uses `If-Match: <etag>`. On `412` the task is re-fetched, the same change is applied again and the write is retried once. If it fails again, the action raises "changed elsewhere at the same time" rather than overwriting.
 - **Change detection:** WebDAV `sync-collection` (sync tokens). If that fails it falls back to the collection ctag and a full fetch. The integration polls on the configured interval and refreshes straight after its own writes.
 - **Dates:** times are written with `TZID` (the HA time zone, America/Los_Angeles). A `VTIMEZONE` is added if the task lacks one. Date-only due dates use `VALUE=DATE`, and `DTSTART` is kept to the same value type.
-- **Credentials:** the app password is used only in an `Authorization` header. Nothing logs URLs or credentials at INFO or above. Debug logs show collection *paths* only, and diagnostics redact the URL, username and password. The config form rejects URLs that contain credentials.
+- **Credentials:** passwords and tokens are used only in `Authorization` headers. Nothing logs URLs or credentials at INFO or above. Diagnostics redact connection details and list IDs. The CalDAV form rejects URLs that contain credentials.
+- **Unsupported features:** each service declares what it can store. The card hides controls a list can't use, and an action that sets an unsupported field fails with a clear error rather than dropping it.
 
-## Repeating tasks
+## Repeating tasks (CalDAV)
 
 This was checked against the Tasks.org source (`RepeatTaskHelper.kt`, `iCalendar.kt`, Nov 2026). Completing a task that has an `RRULE` **advances the same VTODO in place**. No completed copy is created.
 
@@ -119,11 +130,13 @@ Nextcloud Tasks (web) also advances the task in place and decrements `COUNT`.
 - **Reordering (`todo.move_item`).** The card and phones sort by due date or person. Nextcloud's `X-APPLE-SORT-ORDER` isn't kept consistently across clients, so a manual order in HA would be misleading.
 - Personal lists, the shopping list and calendars are out of scope.
 
-## Why not the `caldav` library?
+## Why not the `caldav` library? (CalDAV)
 
 The integration talks WebDAV directly through Home Assistant's own aiohttp session. It needs exact control of ETags, `sync-collection` and raw bodies. It also avoids the known trap where a custom integration pins `caldav` and breaks the built-in CalDAV integration. The only requirement is `icalendar>=6.1.0`, used to generate `VTIMEZONE`. It's a minimum version, so HA's own copy is used.
 
 ## Development
+
+Read [CLAUDE.md](CLAUDE.md) (working rules) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (the contract, the backend interface, service mappings, and how to add a service).
 
 ```bash
 ./scripts_test.sh            # ruff + full test suite (Python 3.14 container + throwaway Radicale)

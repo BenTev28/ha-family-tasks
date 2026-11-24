@@ -14,19 +14,18 @@ import uuid
 
 import aiohttp
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import CONF_PASSWORD, CONF_URL, CONF_USERNAME
+from homeassistant.const import CONF_PASSWORD, CONF_URL, CONF_USERNAME, CONF_VERIFY_SSL
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_capture_events
 
-from custom_components.family_tasks.client import CalDavClient, PreconditionFailed
+from custom_components.family_tasks.backends.caldav.client import CalDavClient, PreconditionFailed
 from custom_components.family_tasks.const import (
     CONF_ASSIGNEES,
     CONF_COMPLETED_DAYS,
     CONF_LISTS,
     CONF_SCAN_INTERVAL,
-    CONF_VERIFY_SSL,
     DOMAIN,
     EVENT_TASK_ADDED,
     EVENT_TASK_ASSIGNED,
@@ -112,6 +111,7 @@ async def entry(hass: HomeAssistant, account: dict[str, str]) -> MockConfigEntry
         title="test",
         unique_id=account["user"],
         data={
+            "backend": "caldav",
             CONF_URL: account["base"],
             CONF_USERNAME: account["user"],
             CONF_PASSWORD: PASSWORD,
@@ -263,7 +263,7 @@ async def test_persistent_conflict_raises(hass: HomeAssistant, entry, account, m
     async def always_412(*args, **kwargs):
         raise PreconditionFailed("changed")
 
-    monkeypatch.setattr(_coord(entry).client, "put", always_412)
+    monkeypatch.setattr(_coord(entry).backend.client, "put", always_412)
     with pytest.raises(HomeAssistantError, match="changed elsewhere"):
         await hass.services.async_call(
             DOMAIN, "update_task", {"uid": "7340213419562178372", "summary": "x"}, blocking=True
@@ -331,7 +331,7 @@ async def test_overdue_sensor(hass: HomeAssistant, entry) -> None:
 async def test_remote_delete_detected_via_sync(hass: HomeAssistant, entry, account) -> None:
     await _remote_put(account, "phone.ics", SAMPLE)
     await _coord(entry).async_refresh()
-    state = _coord(entry).lists[account["list"]]
+    state = _coord(entry).backend._lists[account["list"]]
     assert state.sync_token  # Radicale supports sync-collection
     async with aiohttp.ClientSession() as session:
         await _req(session, "DELETE", f"{account['base']}{account['list']}phone.ics", account["user"])
@@ -357,3 +357,36 @@ async def test_no_credentials_in_logs_or_diagnostics(hass: HomeAssistant, entry,
     text = str(diag)
     assert PASSWORD not in text
     assert account["base"] not in text
+
+
+async def test_ws_config_reports_capabilities(hass: HomeAssistant, entry, hass_ws_client) -> None:
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id({"type": "family_tasks/config"})
+    msg = await client.receive_json()
+    assert msg["success"]
+    lst = msg["result"]["lists"][0]
+    assert lst["entity_id"] == LIST
+    assert lst["service"] == "caldav"
+    assert lst["capabilities"]["assignees"] == "native"
+    assert lst["capabilities"]["due_time"] is True
+
+
+async def test_unsupported_field_is_rejected_not_dropped(hass: HomeAssistant, entry, monkeypatch) -> None:
+    """Same action, different service: a field the service can't store raises a clear error."""
+    from homeassistant.exceptions import ServiceValidationError
+
+    from custom_components.family_tasks.backends.base import Capabilities, Support
+
+    backend = _coord(entry).backend
+    monkeypatch.setattr(
+        backend,
+        "capabilities",
+        Capabilities(assignees=Support.NATIVE, priority=Support.NONE, recurrence=Support.NONE, due_time=False),
+    )
+    for extra in ({"priority": "high"}, {"rrule": "FREQ=DAILY"}, {"due_datetime": "2026-12-01 10:00:00"}):
+        with pytest.raises(ServiceValidationError):
+            await hass.services.async_call(DOMAIN, "add_task", {"list": LIST, "summary": "x", **extra}, blocking=True)
+    # supported fields still work
+    await hass.services.async_call(
+        DOMAIN, "add_task", {"list": LIST, "summary": "ok", "assignees": ["person.owen"]}, blocking=True
+    )

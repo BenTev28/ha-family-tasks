@@ -1,4 +1,4 @@
-"""Family Tasks: Nextcloud (CalDAV) family task list with assignees as CATEGORIES."""
+"""Family Tasks: shared family task lists with assignees, on any supported task service."""
 
 from __future__ import annotations
 
@@ -54,5 +54,7 @@ async def _async_reload(hass: HomeAssistant, entry: FamilyTasksConfigEntry) -> N
 
 async def async_unload_entry(hass: HomeAssistant, entry: FamilyTasksConfigEntry) -> bool:
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unloaded:
+        await entry.runtime_data.backend.async_close()
     async_dispatcher_send(hass, SIGNAL_UPDATED)
     return unloaded

@@ -1,4 +1,4 @@
-"""family_tasks.* actions."""
+"""family_tasks.* actions. Identical for every backend."""
 
 from __future__ import annotations
 
@@ -7,13 +7,7 @@ from typing import Any
 
 from dateutil.rrule import rrulestr
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.core import (
-    HomeAssistant,
-    ServiceCall,
-    ServiceResponse,
-    SupportsResponse,
-    callback,
-)
+from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse, callback
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.util import dt as dt_util
@@ -21,8 +15,7 @@ import voluptuous as vol
 
 from .const import DOMAIN
 from .coordinator import FamilyTasksCoordinator
-from .task import PRIORITY_TO_ICAL, TaskEditor, task_to_dict
-from .todo import async_apply_update
+from .model import UNSET, AssigneeChange, Priority, Task, TaskChange
 
 PRIORITIES = ["high", "medium", "low", "none"]
 STATUSES = ["open", "completed", "all"]
@@ -64,22 +57,22 @@ GET_SCHEMA = vol.Schema(
 )
 
 
-def _coordinators(hass: HomeAssistant) -> list[FamilyTasksCoordinator]:
+def coordinators(hass: HomeAssistant) -> list[FamilyTasksCoordinator]:
     return [e.runtime_data for e in hass.config_entries.async_entries(DOMAIN) if e.state is ConfigEntryState.LOADED]
 
 
 def _for_list(hass: HomeAssistant, entity_id: str) -> tuple[FamilyTasksCoordinator, str]:
-    for coordinator in _coordinators(hass):
-        path = coordinator.path_for_entity(entity_id)
-        if path is not None and path in coordinator.lists:
-            return coordinator, path
+    for coordinator in coordinators(hass):
+        list_id = coordinator.list_for_entity(entity_id)
+        if list_id is not None and list_id in coordinator.lists:
+            return coordinator, list_id
     raise ServiceValidationError(
         translation_domain=DOMAIN, translation_key="unknown_list", translation_placeholders={"list": entity_id}
     )
 
 
 def _for_uid(hass: HomeAssistant, uid: str) -> FamilyTasksCoordinator:
-    for coordinator in _coordinators(hass):
+    for coordinator in coordinators(hass):
         if coordinator.find(uid):
             return coordinator
     raise ServiceValidationError(
@@ -99,15 +92,15 @@ def _tags(coordinator: FamilyTasksCoordinator, persons: list[str]) -> list[str]:
     return [mapping[p] for p in dict.fromkeys(persons)]
 
 
-def _due(data: dict[str, Any]) -> tuple[bool, date | datetime | None]:
+def _due(data: dict[str, Any]) -> date | datetime | object | None:
     if "due_datetime" in data:
         value = data["due_datetime"]
         if value is not None and value.tzinfo is None:
             value = value.replace(tzinfo=dt_util.get_default_time_zone())
-        return True, value
+        return value
     if "due_date" in data:
-        return True, data["due_date"]
-    return False, None
+        return data["due_date"]
+    return UNSET
 
 
 def _rrule(value: str | None) -> str | None:
@@ -125,8 +118,40 @@ def _rrule(value: str | None) -> str | None:
     return value
 
 
-def _priority(value: str | None) -> int | None:
-    return PRIORITY_TO_ICAL.get(value) if value else None
+def _priority(value: str | None) -> Priority | None:
+    return Priority(value) if value and value != "none" else None
+
+
+def _build_change(coordinator: FamilyTasksCoordinator, data: dict[str, Any]) -> TaskChange:
+    """Map action data to a neutral TaskChange and check it against the backend's capabilities."""
+    assignees: AssigneeChange | None = None
+    if "assignees" in data or data.get("add_assignees") or data.get("remove_assignees"):
+        assignees = AssigneeChange(
+            replace=_tags(coordinator, data["assignees"]) if "assignees" in data else None,
+            add=_tags(coordinator, data.get("add_assignees", [])),
+            remove=_tags(coordinator, data.get("remove_assignees", [])),
+        )
+    change = TaskChange(
+        summary=data.get("summary", UNSET),
+        description=(data["description"] or None) if "description" in data else UNSET,
+        due=_due(data),  # type: ignore[arg-type]
+        priority=_priority(data["priority"]) if "priority" in data else UNSET,
+        rrule=_rrule(data["rrule"]) if "rrule" in data else UNSET,
+        assignees=assignees,
+    )
+    if isinstance(change.due, datetime) and not coordinator.capabilities.due_time:
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="unsupported_field",
+            translation_placeholders={"fields": "due_datetime", "service": coordinator.spec.name},
+        )
+    if unsupported := coordinator.unsupported(change):
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="unsupported_field",
+            translation_placeholders={"fields": ", ".join(unsupported), "service": coordinator.spec.name},
+        )
+    return change
 
 
 @callback
@@ -134,57 +159,24 @@ def async_setup_services(hass: HomeAssistant) -> None:
     """Register actions (once, independent of config entries)."""
 
     async def add_task(call: ServiceCall) -> ServiceResponse:
-        data = call.data
-        coordinator, path = _for_list(hass, data["list"])
-        tags = _tags(coordinator, data.get("assignees", []))
-        has_due, due = _due(data)
-        rrule = _rrule(data.get("rrule"))
-
-        def mutate(editor: TaskEditor) -> None:
-            if has_due and due is not None:
-                editor.set_due(due)
-            if data.get("description"):
-                editor.set_description(data["description"])
-            if data.get("priority"):
-                editor.set_priority(_priority(data["priority"]))
-            if rrule:
-                editor.set_rrule(rrule)
-            if tags:
-                editor.set_assignee_tags(tags, coordinator.managed_tags)
-
-        uid = await coordinator.async_create(path, data["summary"], mutate)
+        coordinator, list_id = _for_list(hass, call.data["list"])
+        change = _build_change(coordinator, {k: v for k, v in call.data.items() if k != "summary"})
+        uid = await coordinator.async_create(list_id, call.data["summary"], change)
         return {"uid": uid}
 
     async def update_task(call: ServiceCall) -> ServiceResponse:
-        data = call.data
-        coordinator = _for_uid(hass, data["uid"])
-        has_due, due = _due(data)
-        changed = await async_apply_update(
-            coordinator,
-            data["uid"],
-            summary=data.get("summary"),
-            due=due,
-            set_due=has_due,
-            description=data.get("description"),
-            set_description="description" in data,
-            priority=_priority(data.get("priority")),
-            set_priority="priority" in data,
-            rrule=_rrule(data.get("rrule")),
-            set_rrule="rrule" in data,
-            assignee_tags=_tags(coordinator, data["assignees"]) if "assignees" in data else None,
-            add_tags=_tags(coordinator, data.get("add_assignees", [])),
-            remove_tags=_tags(coordinator, data.get("remove_assignees", [])),
-        )
-        return {"uid": data["uid"], "changed": changed}
+        coordinator = _for_uid(hass, call.data["uid"])
+        changed = await coordinator.async_update(call.data["uid"], _build_change(coordinator, dict(call.data)))
+        return {"uid": call.data["uid"], "changed": changed}
 
     async def complete_task(call: ServiceCall) -> ServiceResponse:
         coordinator = _for_uid(hass, call.data["uid"])
-        changed = await async_apply_update(coordinator, call.data["uid"], completed=True)
+        changed = await coordinator.async_update(call.data["uid"], TaskChange(completed=True))
         return {"uid": call.data["uid"], "changed": changed}
 
     async def reopen_task(call: ServiceCall) -> ServiceResponse:
         coordinator = _for_uid(hass, call.data["uid"])
-        changed = await async_apply_update(coordinator, call.data["uid"], completed=False)
+        changed = await coordinator.async_update(call.data["uid"], TaskChange(completed=False))
         return {"uid": call.data["uid"], "changed": changed}
 
     async def delete_task(call: ServiceCall) -> ServiceResponse:
@@ -206,6 +198,36 @@ def async_setup_services(hass: HomeAssistant) -> None:
         hass.services.async_register(DOMAIN, name, handler, schema=schema, supports_response=response)
 
 
+def task_to_dict(task: Task, *, list_entity: str | None, coordinator: FamilyTasksCoordinator, now: datetime) -> dict:
+    """The task object of the public contract (actions + websocket). Same for every backend."""
+    tag_to_person = coordinator.tag_to_person
+    assignee_tags = [t for t in task.tags if t.lower() in tag_to_person]
+    due: str | None = None
+    if isinstance(task.due, datetime):
+        due = task.due.astimezone(now.tzinfo).isoformat()
+    elif task.due is not None:
+        due = task.due.isoformat()
+    return {
+        "uid": task.id,
+        "list": list_entity,
+        "summary": task.summary,
+        "description": task.description,
+        "status": "completed" if task.completed else "needs_action",
+        "due": due,
+        "due_has_time": isinstance(task.due, datetime),
+        "completed": task.completed_at.isoformat() if task.completed_at else None,
+        "overdue": task.is_overdue(now),
+        "assignees": coordinator.assignees_of(task),
+        "assignee_tags": assignee_tags,
+        "other_tags": [t for t in task.tags if t.lower() not in tag_to_person],
+        "priority": task.priority.value if task.priority else None,
+        "rrule": task.rrule,
+        "etag": task.version,
+        "has_alarm": task.has_alarm,
+        "parent_uid": task.parent_id,
+    }
+
+
 def query_tasks(
     hass: HomeAssistant,
     *,
@@ -219,9 +241,9 @@ def query_tasks(
     now = dt_util.now()
     today = now.date()
     out: list[dict[str, Any]] = []
-    for coordinator in _coordinators(hass):
-        for path, state in coordinator.lists.items():
-            entity_id = coordinator.list_entity_id(path)
+    for coordinator in coordinators(hass):
+        for list_id, state in coordinator.lists.items():
+            entity_id = coordinator.list_entity_id(list_id)
             if list is not None and entity_id != list:
                 continue
             for task in state.tasks.values():
@@ -237,7 +259,7 @@ def query_tasks(
                 if assignee not in (None, "unassigned") and assignee not in people:
                     continue
                 if due is not None:
-                    day = task.due_date(now.tzinfo)  # type: ignore[arg-type]
+                    day = task.due_date(now.tzinfo)
                     if day is None:
                         continue
                     overdue = task.is_overdue(now)
@@ -249,13 +271,6 @@ def query_tasks(
                         continue
                     if due == "week" and not (today <= day <= today + timedelta(days=7)):
                         continue
-                out.append(
-                    task_to_dict(
-                        task,
-                        list_entity=entity_id,
-                        tag_to_person=coordinator.tag_to_person,
-                        now=now,
-                    )
-                )
+                out.append(task_to_dict(task, list_entity=entity_id, coordinator=coordinator, now=now))
     out.sort(key=lambda t: (t["status"] == "completed", t["due"] is None, t["due"] or "", t["summary"].lower()))
     return out

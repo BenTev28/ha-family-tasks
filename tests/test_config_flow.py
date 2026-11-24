@@ -12,12 +12,12 @@ import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 import voluptuous_serialize
 
-from custom_components.family_tasks.client import (
+from custom_components.family_tasks.backends.caldav import InvalidUrl, validate_url
+from custom_components.family_tasks.backends.caldav.client import (
     CalDavAuthError,
     CalDavConnectionError,
     Collection,
 )
-from custom_components.family_tasks.config_flow import InvalidUrl, validate_url
 from custom_components.family_tasks.const import CONF_ASSIGNEES, CONF_LISTS, DOMAIN
 
 COLLECTIONS = [
@@ -30,7 +30,7 @@ USER_INPUT = {
     "password": "app-pass",
     "verify_ssl": True,
 }
-DISCOVER = "custom_components.family_tasks.config_flow.CalDavClient.discover"
+DISCOVER = "custom_components.family_tasks.backends.caldav.client.CalDavClient.discover"
 
 
 @pytest.mark.parametrize(
@@ -96,8 +96,8 @@ async def test_invalid_url_never_echoes_password(hass: HomeAssistant, caplog) ->
 async def test_reconfigure_keeps_entry_and_password(hass: HomeAssistant) -> None:
     entry = MockConfigEntry(
         domain=DOMAIN,
-        unique_id="household@cloud.example.com",
-        data=USER_INPUT,
+        unique_id="caldav:household@cloud.example.com",
+        data={**USER_INPUT, "backend": "caldav"},
         options={CONF_LISTS: {COLLECTIONS[0].path: "Family To-Do"}, CONF_ASSIGNEES: []},
     )
     entry.add_to_hass(hass)
@@ -116,8 +116,8 @@ async def test_reconfigure_keeps_entry_and_password(hass: HomeAssistant) -> None
 async def test_options_flow(hass: HomeAssistant) -> None:
     entry = MockConfigEntry(
         domain=DOMAIN,
-        unique_id="household@cloud.example.com",
-        data=USER_INPUT,
+        unique_id="caldav:household@cloud.example.com",
+        data={**USER_INPUT, "backend": "caldav"},
         options={
             CONF_LISTS: {COLLECTIONS[0].path: "Family To-Do"},
             CONF_ASSIGNEES: [{"person": "person.owen", "tag": "Owen", "color": "#43a047"}],

@@ -4,9 +4,8 @@ from __future__ import annotations
 
 DOMAIN = "family_tasks"
 VERSION = "0.1.0"
-PRODID = f"-//Tevelow//HA family_tasks {VERSION}//EN"
+PRODID = f"-//Home Assistant//family_tasks {VERSION}//EN"
 
-CONF_VERIFY_SSL = "verify_ssl"
 CONF_LISTS = "lists"
 CONF_ASSIGNEES = "assignees"
 CONF_SCAN_INTERVAL = "scan_interval"

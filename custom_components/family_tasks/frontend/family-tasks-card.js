@@ -5,7 +5,7 @@
  * external imports. Served by the integration at /family_tasks/family-tasks-card.js.
  *
  * Data comes from the integration's websocket API:
- *   family_tasks/config     -> { people, lists, completed_days }
+ *   family_tasks/config     -> { people, lists (with service + capabilities), completed_days }
  *   family_tasks/subscribe  -> stream of { tasks: [...] } snapshots
  * Writes go through the family_tasks.* actions (services).
  *
@@ -646,6 +646,16 @@ class FamilyTasksCard extends HTMLElement {
     this.shadowRoot.append(h("style", null, STYLES), this._card, this._dialogHost, this._toastEl);
   }
 
+  /** Capabilities of the configured list (all native if unknown). */
+  _caps() {
+    const lists = (this._ftConfig && this._ftConfig.lists) || [];
+    const l = lists.find((x) => x.entity_id === (this._config && this._config.entity));
+    return Object.assign(
+      { assignees: "native", priority: "native", recurrence: "native", description: "native", due_time: true },
+      (l && l.capabilities) || {},
+    );
+  }
+
   _listName() {
     const lists = (this._ftConfig && this._ftConfig.lists) || [];
     const l = lists.find((x) => x.entity_id === this._config.entity);
@@ -813,6 +823,12 @@ class TaskDialog {
     this.card = card;
     this.task = task;
     this.isEdit = !!task;
+    // What the list's service supports (same contract for every service;
+    // only the available controls differ). See docs/ARCHITECTURE.md §3.
+    this.caps = card._caps();
+    const label = (text, key) =>
+      this.caps[key] === "emulated" ? `${text} · Home Assistant only` : text;
+    const supported = (key) => this.caps[key] !== "none";
     this.busy = false;
     const due = task ? dueParts(task) : { date: "", time: "" };
     const rr = parseRrule(task && task.rrule);
@@ -895,7 +911,7 @@ class TaskDialog {
     const peopleField = h(
       "div",
       null,
-      h("span", { class: "flabel" }, "Who"),
+      h("span", { class: "flabel" }, label("Who", "assignees")),
       peopleBtns.length
         ? h("div", { class: "people" }, peopleBtns)
         : h("div", { class: "hint" }, "No people are set up in the Family Tasks options."),
@@ -968,7 +984,7 @@ class TaskDialog {
     const prioField = h(
       "div",
       null,
-      h("span", { class: "flabel" }, "Priority"),
+      h("span", { class: "flabel" }, label("Priority", "priority")),
       this.segmented(
         [
           [null, "None"],
@@ -1016,7 +1032,7 @@ class TaskDialog {
     const repeatField = h(
       "div",
       null,
-      h("span", { class: "flabel" }, "Repeat"),
+      h("span", { class: "flabel" }, label("Repeat", "recurrence")),
       this.segmented(
         repeatOpts,
         () => s.repeat,
@@ -1042,7 +1058,7 @@ class TaskDialog {
       },
     });
     this.notesInput.value = s.description;
-    const notesField = h("div", null, h("span", { class: "flabel" }, "Notes"), this.notesInput);
+    const notesField = h("div", null, h("span", { class: "flabel" }, label("Notes", "description")), this.notesInput);
 
     // Other tags (read-only, reassure that they're kept)
     const otherTags = (this.task && this.task.other_tags) || [];
@@ -1072,11 +1088,11 @@ class TaskDialog {
         "div",
         { class: "dbody" },
         this.titleInput,
-        peopleField,
+        supported("assignees") ? peopleField : null,
         dueField,
-        repeatField,
-        prioField,
-        notesField,
+        supported("recurrence") ? repeatField : null,
+        supported("priority") ? prioField : null,
+        supported("description") ? notesField : null,
         tagsNote,
         this.errorEl,
       ),
@@ -1092,6 +1108,11 @@ class TaskDialog {
       },
       dialog,
     );
+    if (this.caps.due_time === false) {
+      // service stores dates only
+      this.timeInput.style.display = "none";
+      this.clearTimeBtn.style.display = "none";
+    }
     this.syncDue();
     this.syncRepeat();
   }

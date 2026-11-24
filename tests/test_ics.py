@@ -8,8 +8,8 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from custom_components.family_tasks.ics import ICalDocument, fold
-from custom_components.family_tasks.task import Task, TaskEditor, new_task_ical
+from custom_components.family_tasks.backends.caldav.ics import ICalDocument, fold
+from custom_components.family_tasks.backends.caldav.vtodo import TaskEditor, VTodo, new_task_ical
 
 TZ = ZoneInfo("America/Los_Angeles")
 NOW = datetime(2026, 11, 23, 20, 0, tzinfo=UTC)
@@ -38,7 +38,7 @@ def test_roundtrip_lf_input_becomes_crlf() -> None:
 
 
 def test_parse_sample() -> None:
-    task = Task.from_ical("/x.ics", '"e1"', SAMPLE, TZ)
+    task = VTodo.from_ical("/x.ics", '"e1"', SAMPLE, TZ)
     assert task.uid == "7340213419562178372"
     assert task.summary.startswith("Take the recycling bins out to the curb and bring the empty ones back in")
     assert task.description == "Blue bin = paper, cans\nGreen bin = yard waste"
@@ -80,7 +80,7 @@ def test_unassign_removes_categories_when_empty() -> None:
 
 def test_multiple_categories_lines_are_merged() -> None:
     raw = SAMPLE.replace("CATEGORIES:Groceries,owen", "CATEGORIES:Groceries\r\nCATEGORIES:Rachel")
-    task = Task.from_ical("/x", None, raw, TZ)
+    task = VTodo.from_ical("/x", None, raw, TZ)
     assert task.categories == ["Groceries", "Rachel"]
     out, _ = edit(raw, lambda e: e.set_assignee_tags(["Rachel", "Hannah"], MANAGED))
     assert out.count("CATEGORIES") == 1
@@ -115,7 +115,7 @@ def test_edit_summary_keeps_alarms_subtask_link_and_x_props() -> None:
 def test_text_escaping_roundtrip() -> None:
     out, _ = edit(SAMPLE, lambda e: e.set_description("a, b; c\\d\nline2"))
     assert "DESCRIPTION:a\\, b\\; c\\\\d\\nline2" in out
-    assert Task.from_ical("/x", None, out, TZ).description == "a, b; c\\d\nline2"
+    assert VTodo.from_ical("/x", None, out, TZ).description == "a, b; c\\d\nline2"
 
 
 def test_long_line_is_folded() -> None:
@@ -127,7 +127,7 @@ def test_long_line_is_folded() -> None:
 def test_complete_non_recurring() -> None:
     raw = SAMPLE.replace("RRULE:FREQ=WEEKLY;COUNT=3;BYDAY=WE\r\n", "")
     out, _ = edit(raw, lambda e: e.complete(NOW))
-    task = Task.from_ical("/x", None, out, TZ)
+    task = VTodo.from_ical("/x", None, out, TZ)
     assert task.completed
     assert "COMPLETED:20261123T200000Z" in out
     assert "PERCENT-COMPLETE:100" in out
@@ -136,7 +136,7 @@ def test_complete_non_recurring() -> None:
 def test_complete_recurring_advances_like_tasks_org() -> None:
     out, editor = edit(SAMPLE, lambda e: setattr(e, "result", e.complete(NOW)))
     assert editor.result is True  # type: ignore[attr-defined]
-    task = Task.from_ical("/x", None, out, TZ)
+    task = VTodo.from_ical("/x", None, out, TZ)
     assert not task.completed
     assert "STATUS:" not in out.split("BEGIN:VALARM")[0]  # STATUS removed, like Tasks.org
     assert "COMPLETED:" not in out
@@ -154,13 +154,13 @@ def test_complete_recurring_count_one_completes() -> None:
     raw = SAMPLE.replace("COUNT=3", "COUNT=1")
     out, editor = edit(raw, lambda e: setattr(e, "result", e.complete(NOW)))
     assert editor.result is False  # type: ignore[attr-defined]
-    assert Task.from_ical("/x", None, out, TZ).completed
+    assert VTodo.from_ical("/x", None, out, TZ).completed
 
 
 def test_complete_recurring_until_exhausted_completes() -> None:
     raw = SAMPLE.replace("COUNT=3", "UNTIL=20261130T000000Z")
     out, _ = edit(raw, lambda e: e.complete(NOW))
-    assert Task.from_ical("/x", None, out, TZ).completed
+    assert VTodo.from_ical("/x", None, out, TZ).completed
 
 
 def test_complete_recurring_date_only_daily() -> None:
@@ -170,7 +170,7 @@ def test_complete_recurring_date_only_daily() -> None:
         .replace("RRULE:FREQ=WEEKLY;COUNT=3;BYDAY=WE", "RRULE:FREQ=DAILY;INTERVAL=2")
     )
     out, _ = edit(raw, lambda e: e.complete(NOW))
-    task = Task.from_ical("/x", None, out, TZ)
+    task = VTodo.from_ical("/x", None, out, TZ)
     assert task.due == date(2026, 11, 27)
     assert "DUE;VALUE=DATE:20261127" in out
     assert "RRULE:FREQ=DAILY;INTERVAL=2" in out
@@ -180,7 +180,7 @@ def test_reopen() -> None:
     raw = SAMPLE.replace("RRULE:FREQ=WEEKLY;COUNT=3;BYDAY=WE\r\n", "")
     done, _ = edit(raw, lambda e: e.complete(NOW))
     out, _ = edit(done, lambda e: e.reopen())
-    task = Task.from_ical("/x", None, out, TZ)
+    task = VTodo.from_ical("/x", None, out, TZ)
     assert not task.completed
     assert "PERCENT-COMPLETE" not in out
 
@@ -190,7 +190,7 @@ def test_new_task_due_datetime_adds_vtimezone() -> None:
     out, _ = edit(raw, lambda e: e.set_due(datetime(2026, 11, 24, 17, 0, tzinfo=TZ)))
     assert "DUE;TZID=America/Los_Angeles:20261124T170000" in out
     assert "BEGIN:VTIMEZONE" in out and "TZID:America/Los_Angeles" in out
-    assert Task.from_ical("/x", None, out, TZ).due == datetime(2026, 11, 24, 17, 0, tzinfo=TZ)
+    assert VTodo.from_ical("/x", None, out, TZ).due == datetime(2026, 11, 24, 17, 0, tzinfo=TZ)
 
 
 def test_set_due_date_only() -> None:
@@ -207,6 +207,6 @@ def test_clear_due() -> None:
 
 @pytest.mark.parametrize(("value", "label"), [(1, "high"), (4, "high"), (5, "medium"), (9, "low"), (0, None)])
 def test_priority_labels(value: int, label: str | None) -> None:
-    from custom_components.family_tasks.task import priority_label
+    from custom_components.family_tasks.backends.caldav.vtodo import priority_from_ical
 
-    assert priority_label(value) == label
+    assert priority_from_ical(value) == label

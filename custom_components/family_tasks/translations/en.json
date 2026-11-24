@@ -2,45 +2,48 @@
   "config": {
     "step": {
       "user": {
-        "title": "Connect to Nextcloud",
-        "description": "Use the CalDAV root (for example {example_url}) and a Nextcloud app password for the account that owns the shared task list.",
+        "title": "Choose a task service",
         "data": {
-          "url": "CalDAV URL",
-          "username": "Username",
-          "password": "App password",
-          "verify_ssl": "Verify SSL certificate"
-        },
-        "data_description": {
-          "url": "Must start with https:// and must not contain a username or password.",
-          "password": "Create one in Nextcloud under Settings → Security → Devices & sessions."
+          "backend": "Service"
         }
       },
       "lists": {
         "title": "Choose task lists",
         "description": "Each selected list becomes a to-do entity.",
-        "data": { "lists": "Task lists" }
-      },
-      "reauth_confirm": {
-        "title": "Re-enter app password",
-        "description": "Nextcloud rejected the app password for {username}. Enter a new one.",
-        "data": { "password": "App password" }
+        "data": {
+          "lists": "Task lists"
+        }
       },
       "reconfigure": {
         "title": "Update connection",
-        "description": "Change the server or rotate the app password. Leave the password empty to keep the current one. Entity IDs are kept.",
+        "description": "Change the connection to {service}. Leave the password empty to keep the current one. Entity IDs are kept.",
         "data": {
-          "url": "CalDAV URL",
+          "url": "Server URL",
           "username": "Username",
-          "password": "App password",
+          "password": "Password or app password",
           "verify_ssl": "Verify SSL certificate"
+        }
+      },
+      "connect_caldav": {
+        "title": "Connect to a CalDAV server",
+        "description": "Enter the connection details for the account that owns the shared task list.",
+        "data": {
+          "url": "Server URL",
+          "username": "Username",
+          "password": "Password or app password",
+          "verify_ssl": "Verify SSL certificate"
+        },
+        "data_description": {
+          "url": "CalDAV root, for example {example_url}. Must start with https:// and must not contain a username or password.",
+          "password": "Use an app-specific password where the service offers one (Nextcloud: Settings → Security; iCloud and Fastmail: account security settings)."
         }
       }
     },
     "error": {
       "invalid_url": "Enter an https:// URL without a username, password, query or fragment.",
-      "invalid_auth": "Nextcloud rejected the username or app password.",
+      "invalid_auth": "The service rejected the username or password.",
       "cannot_connect": "Could not reach the server. Check the host name, DNS and that it is reachable from Home Assistant.",
-      "not_caldav": "The server answered, but not like a CalDAV server. Check the URL (it usually ends in /remote.php/dav).",
+      "not_caldav": "The server answered, but not like a CalDAV server. Check the URL (for Nextcloud it ends in /remote.php/dav).",
       "no_task_lists": "No task lists were found for this account.",
       "no_lists_selected": "Select at least one list."
     },
@@ -71,7 +74,7 @@
       "duplicate_assignee": "Each person and each tag may only appear once.",
       "invalid_tag": "Tags cannot contain commas.",
       "no_lists_selected": "Select at least one list.",
-      "cannot_connect_lists": "Could not refresh the list of task lists from Nextcloud; showing the current selection."
+      "cannot_connect_lists": "Could not refresh the available task lists from the service; showing the current selection."
     }
   },
   "selector": {
@@ -83,10 +86,19 @@
       }
     },
     "priority": {
-      "options": { "high": "High", "medium": "Medium", "low": "Low", "none": "None" }
+      "options": {
+        "high": "High",
+        "medium": "Medium",
+        "low": "Low",
+        "none": "None"
+      }
     },
     "status": {
-      "options": { "open": "Open", "completed": "Completed", "all": "All" }
+      "options": {
+        "open": "Open",
+        "completed": "Completed",
+        "all": "All"
+      }
     },
     "due": {
       "options": {
@@ -99,72 +111,168 @@
   },
   "entity": {
     "sensor": {
-      "open_family_tasks": { "name": "{person} open family tasks" }
+      "open_family_tasks": {
+        "name": "{person} open family tasks"
+      }
     },
     "binary_sensor": {
-      "has_overdue_family_tasks": { "name": "{person} has overdue family tasks" }
+      "has_overdue_family_tasks": {
+        "name": "{person} has overdue family tasks"
+      }
     }
   },
   "exceptions": {
-    "unknown_list": { "message": "{list} is not a Family Tasks list." },
-    "unknown_task": { "message": "No task with UID {uid} was found." },
-    "unknown_person": { "message": "Not a configured assignee: {persons}. Configured: {known}." },
-    "invalid_rrule": { "message": "Invalid repeat rule: {rrule}." }
+    "unknown_list": {
+      "message": "{list} is not a Family Tasks list."
+    },
+    "unknown_task": {
+      "message": "No task with UID {uid} was found."
+    },
+    "unknown_person": {
+      "message": "Not a configured assignee: {persons}. Configured: {known}."
+    },
+    "invalid_rrule": {
+      "message": "Invalid repeat rule: {rrule}."
+    },
+    "unsupported_field": {
+      "message": "{service} cannot store: {fields}."
+    }
   },
   "services": {
     "add_task": {
       "name": "Add task",
       "description": "Add a task to a family list, assigned to one or more people.",
       "fields": {
-        "list": { "name": "List", "description": "Family Tasks to-do entity." },
-        "summary": { "name": "Title", "description": "Task title." },
-        "assignees": { "name": "Assignees", "description": "People to assign (must be configured in the options)." },
-        "due_date": { "name": "Due date", "description": "All-day due date." },
-        "due_datetime": { "name": "Due date and time", "description": "Due date with a time (Home Assistant's time zone)." },
-        "description": { "name": "Notes", "description": "Task notes." },
-        "priority": { "name": "Priority", "description": "high, medium or low." },
-        "rrule": { "name": "Repeat rule", "description": "iCalendar RRULE, e.g. FREQ=WEEKLY;BYDAY=MO." }
+        "list": {
+          "name": "List",
+          "description": "Family Tasks to-do entity."
+        },
+        "summary": {
+          "name": "Title",
+          "description": "Task title."
+        },
+        "assignees": {
+          "name": "Assignees",
+          "description": "People to assign (must be configured in the options)."
+        },
+        "due_date": {
+          "name": "Due date",
+          "description": "All-day due date."
+        },
+        "due_datetime": {
+          "name": "Due date and time",
+          "description": "Due date with a time (Home Assistant's time zone)."
+        },
+        "description": {
+          "name": "Notes",
+          "description": "Task notes."
+        },
+        "priority": {
+          "name": "Priority",
+          "description": "high, medium or low."
+        },
+        "rrule": {
+          "name": "Repeat rule",
+          "description": "iCalendar RRULE, e.g. FREQ=WEEKLY;BYDAY=MO."
+        }
       }
     },
     "update_task": {
       "name": "Update task",
       "description": "Change a task. Only the given fields change; other tags and properties are kept.",
       "fields": {
-        "uid": { "name": "UID", "description": "Task UID (from get_tasks)." },
-        "summary": { "name": "Title", "description": "New title." },
-        "assignees": { "name": "Assignees", "description": "Replace all assignees with these people (empty list unassigns everyone)." },
-        "add_assignees": { "name": "Add assignees", "description": "People to add." },
-        "remove_assignees": { "name": "Remove assignees", "description": "People to remove." },
-        "due_date": { "name": "Due date", "description": "All-day due date (null clears)." },
-        "due_datetime": { "name": "Due date and time", "description": "Due date with a time (null clears)." },
-        "description": { "name": "Notes", "description": "New notes (empty clears)." },
-        "priority": { "name": "Priority", "description": "high, medium, low or none." },
-        "rrule": { "name": "Repeat rule", "description": "New RRULE (empty clears)." }
+        "uid": {
+          "name": "UID",
+          "description": "Task UID (from get_tasks)."
+        },
+        "summary": {
+          "name": "Title",
+          "description": "New title."
+        },
+        "assignees": {
+          "name": "Assignees",
+          "description": "Replace all assignees with these people (empty list unassigns everyone)."
+        },
+        "add_assignees": {
+          "name": "Add assignees",
+          "description": "People to add."
+        },
+        "remove_assignees": {
+          "name": "Remove assignees",
+          "description": "People to remove."
+        },
+        "due_date": {
+          "name": "Due date",
+          "description": "All-day due date (null clears)."
+        },
+        "due_datetime": {
+          "name": "Due date and time",
+          "description": "Due date with a time (null clears)."
+        },
+        "description": {
+          "name": "Notes",
+          "description": "New notes (empty clears)."
+        },
+        "priority": {
+          "name": "Priority",
+          "description": "high, medium, low or none."
+        },
+        "rrule": {
+          "name": "Repeat rule",
+          "description": "New RRULE (empty clears)."
+        }
       }
     },
     "complete_task": {
       "name": "Complete task",
-      "description": "Mark a task done. Repeating tasks move to their next due date, like Tasks.org.",
-      "fields": { "uid": { "name": "UID", "description": "Task UID." } }
+      "description": "Mark a task done. Repeating tasks move to their next due date.",
+      "fields": {
+        "uid": {
+          "name": "UID",
+          "description": "Task UID."
+        }
+      }
     },
     "reopen_task": {
       "name": "Reopen task",
       "description": "Mark a completed task as not done.",
-      "fields": { "uid": { "name": "UID", "description": "Task UID." } }
+      "fields": {
+        "uid": {
+          "name": "UID",
+          "description": "Task UID."
+        }
+      }
     },
     "delete_task": {
       "name": "Delete task",
-      "description": "Delete a task from Nextcloud.",
-      "fields": { "uid": { "name": "UID", "description": "Task UID." } }
+      "description": "Delete a task from the service.",
+      "fields": {
+        "uid": {
+          "name": "UID",
+          "description": "Task UID."
+        }
+      }
     },
     "get_tasks": {
       "name": "Get tasks",
       "description": "Return tasks with assignees, tags, priority and repeat rule.",
       "fields": {
-        "list": { "name": "List", "description": "Only this list." },
-        "assignee": { "name": "Assignee", "description": "Only tasks assigned to this person (or 'unassigned')." },
-        "status": { "name": "Status", "description": "open, completed or all." },
-        "due": { "name": "Due", "description": "Filter by due date." }
+        "list": {
+          "name": "List",
+          "description": "Only this list."
+        },
+        "assignee": {
+          "name": "Assignee",
+          "description": "Only tasks assigned to this person (or 'unassigned')."
+        },
+        "status": {
+          "name": "Status",
+          "description": "open, completed or all."
+        },
+        "due": {
+          "name": "Due",
+          "description": "Filter by due date."
+        }
       }
     }
   }

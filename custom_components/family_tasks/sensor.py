@@ -11,7 +11,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util, slugify
 
 from .coordinator import Assignee, FamilyTasksConfigEntry, FamilyTasksCoordinator
-from .task import Task
+from .model import Task
 
 PARALLEL_UPDATES = 0
 
@@ -31,7 +31,7 @@ def open_tasks_for(coordinator: FamilyTasksCoordinator, person: str) -> list[Tas
         task
         for state in coordinator.lists.values()
         for task in state.tasks.values()
-        if not task.completed and tag in {c.lower() for c in task.categories}
+        if not task.completed and tag in {t.lower() for t in task.tags}
     ]
     return sorted(result, key=lambda t: (t.due is None, str(t.due or ""), t.summary.lower()))
 

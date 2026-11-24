@@ -4,25 +4,25 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta, tzinfo
-from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dateutil.rrule import rrulestr
 
+from ...model import Priority, Task
 from .ics import Component, ContentLine, ICalDocument, escape_text, split_list, unescape_text
 
-PRIORITY_TO_ICAL = {"high": 1, "medium": 5, "low": 9}
+PRIORITY_TO_ICAL = {Priority.HIGH: 1, Priority.MEDIUM: 5, Priority.LOW: 9}
 
 
-def priority_label(value: int | None) -> str | None:
+def priority_from_ical(value: int | None) -> Priority | None:
     """Map iCal PRIORITY (1-9) to high/medium/low the way Tasks.org does."""
     if not value:
         return None
     if value <= 4:
-        return "high"
+        return Priority.HIGH
     if value == 5:
-        return "medium"
-    return "low"
+        return Priority.MEDIUM
+    return Priority.LOW
 
 
 # ---------------------------------------------------------------------------
@@ -77,8 +77,8 @@ def utc_stamp(now: datetime) -> str:
 
 
 @dataclass
-class Task:
-    """A parsed view of one VTODO resource."""
+class VTodo:
+    """A parsed view of one VTODO resource (CalDAV-internal)."""
 
     href: str
     etag: str | None
@@ -98,7 +98,7 @@ class Task:
     last_modified: datetime | None = None
 
     @classmethod
-    def from_ical(cls, href: str, etag: str | None, raw: str, local_tz: tzinfo) -> Task:
+    def from_ical(cls, href: str, etag: str | None, raw: str, local_tz: tzinfo) -> VTodo:
         doc = ICalDocument.parse(raw)
         todo = doc.vtodo
         uid_line = todo.first("UID")
@@ -141,19 +141,24 @@ class Task:
             last_modified=last_mod if isinstance(last_mod, datetime) else None,
         )
 
-    def is_overdue(self, now: datetime) -> bool:
-        if self.completed or self.due is None:
-            return False
-        if isinstance(self.due, datetime):
-            return self.due < now
-        return self.due < now.date()
-
-    def due_date(self, local_tz: tzinfo) -> date | None:
-        if self.due is None:
-            return None
-        if isinstance(self.due, datetime):
-            return self.due.astimezone(local_tz).date()
-        return self.due
+    def to_task(self, list_id: str) -> Task:
+        """Map to the neutral model."""
+        return Task(
+            id=self.uid,
+            list_id=list_id,
+            summary=self.summary,
+            description=self.description,
+            completed=self.completed,
+            completed_at=self.completed_at,
+            due=self.due,
+            tags=list(self.categories),
+            priority=priority_from_ical(self.priority),
+            rrule=self.rrule,
+            parent_id=self.parent_uid,
+            has_alarm=self.has_alarm,
+            version=self.etag,
+            updated=self.last_modified,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -412,39 +417,3 @@ def new_task_ical(uid: str, summary: str, now: datetime, prodid: str) -> str:
         "END:VTODO\r\n"
         "END:VCALENDAR\r\n"
     )
-
-
-def task_to_dict(
-    task: Task,
-    *,
-    list_entity: str | None,
-    tag_to_person: dict[str, str],
-    now: datetime,
-) -> dict[str, Any]:
-    """Serialise for websocket / service responses."""
-    assignee_tags = [c for c in task.categories if c.lower() in tag_to_person]
-    other = [c for c in task.categories if c.lower() not in tag_to_person]
-    due: str | None = None
-    if isinstance(task.due, datetime):
-        due = task.due.astimezone(now.tzinfo).isoformat()
-    elif task.due is not None:
-        due = task.due.isoformat()
-    return {
-        "uid": task.uid,
-        "list": list_entity,
-        "summary": task.summary,
-        "description": task.description,
-        "status": "completed" if task.completed else "needs_action",
-        "due": due,
-        "due_has_time": isinstance(task.due, datetime),
-        "completed": task.completed_at.isoformat() if task.completed_at else None,
-        "overdue": task.is_overdue(now),
-        "assignees": list(dict.fromkeys(tag_to_person[t.lower()] for t in assignee_tags)),
-        "assignee_tags": assignee_tags,
-        "other_tags": other,
-        "priority": priority_label(task.priority),
-        "rrule": task.rrule,
-        "etag": task.etag,
-        "has_alarm": task.has_alarm,
-        "parent_uid": task.parent_uid,
-    }
