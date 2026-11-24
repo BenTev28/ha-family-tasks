@@ -1,0 +1,119 @@
+add_task:
+  fields:
+    list:
+      required: true
+      selector:
+        entity:
+          domain: todo
+          integration: family_tasks
+    summary:
+      required: true
+      selector:
+        text:
+    assignees:
+      selector:
+        entity:
+          domain: person
+          multiple: true
+    due_date:
+      selector:
+        date:
+    due_datetime:
+      selector:
+        datetime:
+    description:
+      selector:
+        text:
+          multiline: true
+    priority:
+      selector:
+        select:
+          options: [high, medium, low, none]
+          translation_key: priority
+    rrule:
+      example: "FREQ=WEEKLY;BYDAY=MO,TH"
+      selector:
+        text:
+update_task:
+  fields:
+    uid:
+      required: true
+      selector:
+        text:
+    summary:
+      selector:
+        text:
+    assignees:
+      selector:
+        entity:
+          domain: person
+          multiple: true
+    add_assignees:
+      selector:
+        entity:
+          domain: person
+          multiple: true
+    remove_assignees:
+      selector:
+        entity:
+          domain: person
+          multiple: true
+    due_date:
+      selector:
+        date:
+    due_datetime:
+      selector:
+        datetime:
+    description:
+      selector:
+        text:
+          multiline: true
+    priority:
+      selector:
+        select:
+          options: [high, medium, low, none]
+          translation_key: priority
+    rrule:
+      example: "FREQ=MONTHLY"
+      selector:
+        text:
+complete_task:
+  fields:
+    uid:
+      required: true
+      selector:
+        text:
+reopen_task:
+  fields:
+    uid:
+      required: true
+      selector:
+        text:
+delete_task:
+  fields:
+    uid:
+      required: true
+      selector:
+        text:
+get_tasks:
+  fields:
+    list:
+      selector:
+        entity:
+          domain: todo
+          integration: family_tasks
+    assignee:
+      selector:
+        entity:
+          domain: person
+    status:
+      default: open
+      selector:
+        select:
+          options: [open, completed, all]
+          translation_key: status
+    due:
+      selector:
+        select:
+          options: [overdue, today, today_or_overdue, week]
+          translation_key: due

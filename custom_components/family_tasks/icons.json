@@ -1,0 +1,19 @@
+{
+  "entity": {
+    "sensor": { "open_family_tasks": { "default": "mdi:clipboard-account-outline" } },
+    "binary_sensor": {
+      "has_overdue_family_tasks": {
+        "default": "mdi:clipboard-check-outline",
+        "state": { "on": "mdi:clipboard-alert-outline" }
+      }
+    }
+  },
+  "services": {
+    "add_task": { "service": "mdi:clipboard-plus-outline" },
+    "update_task": { "service": "mdi:clipboard-edit-outline" },
+    "complete_task": { "service": "mdi:clipboard-check-outline" },
+    "reopen_task": { "service": "mdi:clipboard-arrow-left-outline" },
+    "delete_task": { "service": "mdi:clipboard-remove-outline" },
+    "get_tasks": { "service": "mdi:clipboard-search-outline" }
+  }
+}

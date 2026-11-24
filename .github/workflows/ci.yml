@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  hassfest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: home-assistant/actions/hassfest@master
+
+  hacs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: hacs/action@main
+        with:
+          category: integration
+          # private repo / no brands entry / no topics yet
+          ignore: brands topics description
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/ruff-action@v3
+      - run: ruff format --check .
+
+  tests:
+    runs-on: ubuntu-latest
+    services:
+      radicale:
+        image: tomsquest/docker-radicale:latest
+        ports: ["5232:5232"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure Radicale (no auth, throwaway)
+        run: |
+          docker cp tests/radicale.conf ${{ job.services.radicale.id }}:/config/config
+          docker restart ${{ job.services.radicale.id }}
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:5232/.web/ >/dev/null && break; sleep 1; done
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - run: pip install -r requirements_test.txt
+      - run: python -m pytest -q
+        env:
+          RADICALE_URL: http://127.0.0.1:5232

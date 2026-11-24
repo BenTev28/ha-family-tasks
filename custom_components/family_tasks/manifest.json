@@ -1,0 +1,21 @@
+{
+  "domain": "family_tasks",
+  "name": "Family Tasks",
+  "after_dependencies": [
+    "frontend"
+  ],
+  "codeowners": [],
+  "config_flow": true,
+  "dependencies": [
+    "http",
+    "websocket_api"
+  ],
+  "documentation": "https://github.com/OWNER/ha-family-tasks",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/OWNER/ha-family-tasks/issues",
+  "requirements": [
+    "icalendar>=6.1.0"
+  ],
+  "version": "0.1.0"
+}
