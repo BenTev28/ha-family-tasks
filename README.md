@@ -24,6 +24,8 @@ Your tasks stay in the service you already use, so phones and other apps keep wo
 1. In Home Assistant, open **HACS** (the **Marketplace** in 2026.11 and later) → ⋮ → **Custom repositories**. Add `https://github.com/BenTev28/ha-family-tasks` as type **Integration**, then install **Family Tasks**.
    Alternatively, copy `custom_components/family_tasks` into your `config/custom_components/` folder.
 2. Restart Home Assistant.
+
+   > **Family Tasks is in beta.** Until the first final release, the Marketplace installs the latest code instead of a release. To get the beta releases, turn on the hidden **Pre-release** switch first. See [Installing and updating](docs/usage.md#installing-and-updating).
 3. Go to **Settings → Devices & services → Add integration → Family Tasks**, pick your service, sign in, and choose the lists to show.
 4. Add the card to a dashboard:
 
