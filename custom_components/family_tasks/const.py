@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 DOMAIN = "family_tasks"
-VERSION = "0.1.0b1"  # must equal manifest.json "version" (tests/test_version.py)
+VERSION = "0.1.0b2"  # must equal manifest.json "version" (tests/test_version.py)
 PRODID = f"-//Home Assistant//family_tasks {VERSION}//EN"
 
 CONF_LISTS = "lists"

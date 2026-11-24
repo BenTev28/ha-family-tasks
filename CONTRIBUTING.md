@@ -74,6 +74,7 @@ Releases are cut from `main`; there are no release branches. Versions follow `MA
 - `ruff` lint and format (configured in `pyproject.toml`), typed Python, and Home Assistant integration conventions.
 - `strings.json` and `translations/en.json` must be identical.
 - The card is a single dependency-free file (`frontend/family-tasks-card.js`) with no build step. It uses HA theme variables, and escapes user text.
+- The card is linted with ESLint (`eslint.config.mjs`; run by CI and `./scripts_test.sh`). There is deliberately no `package.json`.
 
 ## Security
 
