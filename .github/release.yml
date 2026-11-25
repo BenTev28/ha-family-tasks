@@ -2,7 +2,7 @@
 changelog:
   exclude:
     labels: [skip-changelog]
-    authors: [dependabot]
+    authors: ["dependabot[bot]"]  # the bot's full login; plain "dependabot" matches nothing
   categories:
     - title: ⚠️ Breaking changes
       labels: [breaking change]
