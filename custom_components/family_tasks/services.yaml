@@ -117,3 +117,10 @@ get_tasks:
         select:
           options: [overdue, today, today_or_overdue, week]
           translation_key: due
+refresh:
+  fields:
+    list:
+      selector:
+        entity:
+          domain: todo
+          integration: family_tasks

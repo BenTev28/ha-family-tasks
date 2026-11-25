@@ -1,7 +1,8 @@
-"""The version lives in manifest.json and const.VERSION (card cache-busting); keep them equal."""
+"""The version lives in manifest.json, const.VERSION (card cache-busting) and the card's CARD_VERSION; keep them equal."""
 
 import json
 from pathlib import Path
+import re
 
 from awesomeversion import AwesomeVersion
 
@@ -16,3 +17,10 @@ def test_version_matches_manifest() -> None:
 
 def test_version_is_valid_for_hacs() -> None:
     assert AwesomeVersion(VERSION).valid
+
+
+def test_card_version_matches() -> None:
+    card = (MANIFEST.parent / "frontend" / "family-tasks-card.js").read_text()
+    match = re.search(r'^const CARD_VERSION = "([^"]+)";', card, re.MULTILINE)
+    assert match, "CARD_VERSION not found in the card"
+    assert match.group(1) == VERSION

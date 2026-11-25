@@ -12,7 +12,7 @@
  * All user-supplied text is inserted with textContent / text nodes, never innerHTML.
  */
 
-const CARD_VERSION = "0.1.0";
+const CARD_VERSION = "0.1.0b2"; // must equal const.VERSION (tests/test_version.py)
 const DOMAIN = "family_tasks";
 const DAYS = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -217,7 +217,12 @@ ha-card { display: flex; flex-direction: column; height: 100%; overflow: hidden;
   border-radius: 24px; border: 1px solid var(--divider-color); background: transparent;
   color: var(--primary-text-color); font-size: 1rem; }
 .add { background: var(--primary-color); color: var(--text-primary-color, #fff); border-color: transparent; font-weight: 500; }
-.add:disabled { opacity: 0.5; cursor: default; }
+.add:disabled, .hbtn:disabled { opacity: 0.5; cursor: default; }
+.hbtn.icon { padding: 0; width: 48px; justify-content: center; }
+.hbtn.busy { cursor: default; }
+.hbtn.busy ha-icon { animation: ft-spin 1s linear infinite; }
+@keyframes ft-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .hbtn.busy ha-icon { animation: none; opacity: 0.5; } }
 
 .filters { display: flex; gap: 8px; padding: 4px 16px 12px; overflow-x: auto; scrollbar-width: none; flex: none; }
 .filters::-webkit-scrollbar { display: none; }
@@ -227,6 +232,23 @@ ha-card { display: flex; flex-direction: column; height: 100%; overflow: hidden;
 .fchip.has-avatar { padding-left: 6px; }
 .fchip.active { background: var(--chip-color, var(--primary-color)); border-color: var(--chip-color, var(--primary-color));
   color: var(--text-primary-color, #fff); }
+/* Person filter as a dropdown: a styled face with a transparent native <select>
+   on top, so phones get their own picker. Shown instead of the chips when
+   filter_style is "dropdown", or "auto" when the chips don't fit (_fitFilters). */
+.fselect { display: none; position: relative; flex: none; align-items: center; gap: 8px; min-height: 48px;
+  margin: 4px 16px 12px; padding: 0 12px 0 16px; border-radius: 24px;
+  border: 2px solid var(--chip-color, var(--divider-color)); color: var(--primary-text-color); font-size: 1rem; }
+.fselect { max-width: 480px; }
+.fselect.has-avatar { padding-left: 6px; }
+.fselect .flabel-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fselect .chev { flex: none; color: var(--secondary-text-color); }
+.fselect select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer;
+  font-size: 1rem; border: none; }
+.fselect:focus-within { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+ha-card[data-filter-style="dropdown"] .filters { display: none; }
+ha-card[data-filter-style="dropdown"] .fselect { display: flex; }
+ha-card[data-filter-style="auto"][data-filter-fit="dropdown"] .filters { display: none; }
+ha-card[data-filter-style="auto"][data-filter-fit="dropdown"] .fselect { display: flex; }
 .count { min-width: 24px; height: 24px; padding: 0 6px; border-radius: 12px; background: rgba(127, 127, 127, 0.22);
   font-size: 0.85rem; display: inline-flex; align-items: center; justify-content: center; }
 
@@ -257,7 +279,12 @@ ha-card { display: flex; flex-direction: column; height: 100%; overflow: hidden;
 .due.overdue { color: var(--error-color); font-weight: 600; }
 .prio-high { color: var(--error-color); }
 .tag { padding: 1px 8px; border-radius: 10px; background: rgba(127, 127, 127, 0.15); font-size: 0.85rem; }
-.chips { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; max-width: 45%; flex: none; }
+/* One line only: _fitChips() hides what doesn't fit and shows "+n" in the last spot. */
+.chips { display: flex; flex-wrap: nowrap; gap: 6px; max-width: 45%; flex: none; overflow: hidden; }
+.chips > * { flex: none; }
+.chips > [hidden] { display: none; }
+.pchip.more { padding: 0 10px; font-weight: 500; background: rgba(127, 127, 127, 0.18);
+  border-color: var(--divider-color); }
 .pchip { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px 0 3px;
   border-radius: 18px; background: color-mix(in srgb, var(--chip-color) 20%, transparent);
   border: 1.5px solid var(--chip-color); color: var(--primary-text-color); font-size: 0.95rem; white-space: nowrap; }
@@ -411,10 +438,12 @@ class FamilyTasksCard extends HTMLElement {
 
   connectedCallback() {
     if (this._hass && this._config && !this._subToken) this._subscribe();
+    if (this._resizeObs) this._resizeObs.observe(this._listEl);
   }
 
   disconnectedCallback() {
     this._unsubscribe();
+    if (this._resizeObs) this._resizeObs.disconnect();
   }
 
   getCardSize() {
@@ -598,6 +627,23 @@ class FamilyTasksCard extends HTMLElement {
     }
   }
 
+  /** Fetch from the service now; the subscription delivers the result. */
+  async _refresh() {
+    if (this._refreshing || !this._hass) return;
+    this._refreshing = true;
+    this._refreshBtn.classList.add("busy");
+    this._refreshBtn.setAttribute("aria-busy", "true");
+    try {
+      await this._hass.callService(DOMAIN, "refresh", { list: this._config.entity });
+    } catch (err) {
+      this._toast(`Couldn't sync: ${errMsg(err)}`);
+    } finally {
+      this._refreshing = false;
+      this._refreshBtn.classList.remove("busy");
+      this._refreshBtn.removeAttribute("aria-busy");
+    }
+  }
+
   _openDialog(task) {
     if (!this._ftConfig || !this._hass) return;
     this._closeDialog();
@@ -626,6 +672,11 @@ class FamilyTasksCard extends HTMLElement {
     this._built = true;
     this._titleEl = h("div", { class: "title" });
     this._sortBtn = h("button", { class: "hbtn", title: "Change sort order", onclick: () => this._toggleSort() });
+    this._refreshBtn = h(
+      "button",
+      { class: "hbtn icon", title: "Sync now", "aria-label": "Sync now", onclick: () => this._refresh() },
+      icon("mdi:refresh"),
+    );
     this._addBtn = h(
       "button",
       { class: "add", onclick: () => this._openDialog(null) },
@@ -633,12 +684,24 @@ class FamilyTasksCard extends HTMLElement {
       h("span", null, "Add"),
     );
     this._filtersEl = h("div", { class: "filters", role: "toolbar", "aria-label": "Filter by person" });
+    this._fselectEl = h("div", { class: "fselect" });
     this._listEl = h("div", { class: "list" });
+    this._listWidth = 0;
+    this._resizeObs = new ResizeObserver((entries) => {
+      const w = Math.round(entries[entries.length - 1].contentRect.width);
+      if (w !== this._listWidth) {
+        this._listWidth = w;
+        this._fitFilters();
+        this._fitChips();
+      }
+    });
+    this._resizeObs.observe(this._listEl);
     this._card = h(
       "ha-card",
       null,
-      h("div", { class: "header" }, this._titleEl, h("div", { class: "hactions" }, this._sortBtn, this._addBtn)),
+      h("div", { class: "header" }, this._titleEl, h("div", { class: "hactions" }, this._refreshBtn, this._sortBtn, this._addBtn)),
       this._filtersEl,
+      this._fselectEl,
       this._listEl,
     );
     this._dialogHost = h("div");
@@ -667,11 +730,14 @@ class FamilyTasksCard extends HTMLElement {
     if (!this._built || !this._config) return;
     const title = this._config.title !== undefined ? this._config.title : this._listName();
     this._titleEl.textContent = title;
+    const fs = this._config.filter_style;
+    this._card.dataset.filterStyle = fs === "chips" || fs === "dropdown" ? fs : "auto";
     this._sortBtn.replaceChildren(
       icon(this._sort === "due" ? "mdi:calendar-clock" : "mdi:account-multiple"),
       h("span", null, this._sort === "due" ? "By date" : "By person"),
     );
     this._addBtn.disabled = !this._ftConfig;
+    this._refreshBtn.disabled = !this._ftConfig;
     this._renderFilters();
     this._renderList();
   }
@@ -717,6 +783,58 @@ class FamilyTasksCard extends HTMLElement {
       ...this._people().map((p) => mk(p.tag, this._personName(p), p)),
       mk("unassigned", "Unassigned"),
     );
+    this._renderFilterSelect(counts, active);
+    this._fitFilters();
+  }
+
+  /** In auto style, use the dropdown when the person buttons don't fit on one line. */
+  _fitFilters() {
+    const card = this._card;
+    if (!card || card.dataset.filterStyle !== "auto") return;
+    const f = this._filtersEl;
+    card.dataset.filterFit = "chips"; // lay the chips out to measure them (no paint in between)
+    if (!f.clientWidth) return; // not laid out yet; the resize observer calls back
+    card.dataset.filterFit = f.scrollWidth > f.clientWidth + 1 ? "dropdown" : "chips";
+  }
+
+  _renderFilterSelect(counts, active) {
+    // Rebuilding while the picker is open would close it; catch up on the next render.
+    const open = this._fselectEl.querySelector("select");
+    if (open && this.shadowRoot.activeElement === open) return;
+    const people = this._people();
+    const withCount = (label, key) => (counts[key] ? `${label} (${counts[key]})` : label);
+    const choices = [
+      { value: "everyone", label: "Everyone" },
+      ...people.map((p) => ({ value: p.tag, label: this._personName(p), person: p })),
+      { value: "unassigned", label: "Unassigned" },
+    ];
+    const cur = choices.find((c) => String(c.value).toLowerCase() === active) || choices[0];
+    const select = h(
+      "select",
+      {
+        "aria-label": "Show tasks for",
+        onchange: (e) => {
+          e.target.blur();
+          this._setFilter(e.target.value);
+        },
+      },
+      choices.map((c) =>
+        h("option", { value: c.value }, withCount(c.label, String(c.value).toLowerCase())),
+      ),
+    );
+    select.value = cur.value;
+    const el = this._fselectEl;
+    el.className = `fselect${cur.person ? " has-avatar" : ""}`;
+    el.style.setProperty("--chip-color", cur.person ? safeColor(cur.person.color) : "");
+    el.replaceChildren(
+      cur.person ? this._avatar(cur.person, "sm") : icon("mdi:account-multiple"),
+      h("span", { class: "flabel-text" }, cur.label),
+      counts[String(cur.value).toLowerCase()]
+        ? h("span", { class: "count" }, String(counts[String(cur.value).toLowerCase()]))
+        : null,
+      h("ha-icon", { class: "chev", icon: "mdi:menu-down" }),
+      select,
+    );
   }
 
   _renderList() {
@@ -751,6 +869,7 @@ class FamilyTasksCard extends HTMLElement {
       rows.push(this._row(t));
     }
     el.replaceChildren(...rows);
+    this._fitChips();
   }
 
   _row(t) {
@@ -811,8 +930,40 @@ class FamilyTasksCard extends HTMLElement {
         h("div", { class: "summary" }, t.parent_uid ? "↳ " : "", t.summary || "(untitled)"),
         meta.length ? h("div", { class: "meta" }, meta) : null,
       ),
-      h("div", { class: "chips" }, this._taskPeople(t).map((p) => this._personChip(p))),
+      this._chipRow(this._taskPeople(t)),
     );
+  }
+
+  /** Person chips plus a hidden "+n" chip; _fitChips() decides what shows. */
+  _chipRow(people) {
+    const chips = people.map((p) => this._personChip(p));
+    const more = h("span", { class: "pchip more", hidden: true });
+    const row = h("div", { class: "chips" }, chips, more);
+    row._names = people.map((p) => this._personName(p));
+    return row;
+  }
+
+  /** Keep each row's chips on one line, replacing the overflow with "+n". */
+  _fitChips() {
+    if (!this._listEl) return;
+    for (const row of this._listEl.querySelectorAll(".chips")) {
+      const more = row.lastElementChild;
+      const chips = Array.from(row.children).slice(0, -1);
+      for (const c of chips) c.hidden = false;
+      more.hidden = true;
+      if (!row.clientWidth || row.scrollWidth <= row.clientWidth) continue; // fits, or not laid out yet
+      more.hidden = false;
+      let shown = chips.length;
+      while (shown > 0) {
+        chips[shown - 1].hidden = true;
+        shown--;
+        more.textContent = `+${chips.length - shown}`;
+        if (row.scrollWidth <= row.clientWidth) break;
+      }
+      const hiddenNames = row._names.slice(shown);
+      more.title = hiddenNames.join(", ");
+      more.setAttribute("aria-label", `and ${hiddenNames.length} more: ${hiddenNames.join(", ")}`);
+    }
   }
 }
 
@@ -1357,6 +1508,13 @@ class FamilyTasksCardEditor extends HTMLElement {
       (ft.people || []).map((p) => h("option", { value: p.tag }, p.name || p.tag)),
       h("option", { value: "unassigned" }, "Unassigned"),
     );
+    this._filterStyle = h(
+      "select",
+      { onchange: (e) => this._change("filter_style", e.target.value === "auto" ? "" : e.target.value) },
+      h("option", { value: "auto" }, "Automatic (dropdown when the buttons don't fit)"),
+      h("option", { value: "chips" }, "Buttons"),
+      h("option", { value: "dropdown" }, "Dropdown"),
+    );
     this._showDone = h("input", {
       type: "checkbox",
       onchange: (e) => this._change("show_completed", e.target.checked ? "" : false),
@@ -1371,6 +1529,7 @@ class FamilyTasksCardEditor extends HTMLElement {
         h("label", null, "Title", this._title),
         h("label", null, "Sort by", this._sort),
         h("label", null, "Start with filter", this._filter),
+        h("label", null, "Person filter style", this._filterStyle),
         h("label", { class: "inline" }, this._showDone, "Show recently completed tasks"),
         h(
           "div",
@@ -1395,6 +1554,7 @@ class FamilyTasksCardEditor extends HTMLElement {
     set(this._title, c.title || "");
     set(this._sort, c.sort || "due");
     set(this._filter, c.default_filter || "everyone");
+    set(this._filterStyle, c.filter_style || "auto");
     this._showDone.checked = c.show_completed !== false;
   }
 }
