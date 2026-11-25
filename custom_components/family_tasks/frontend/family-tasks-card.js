@@ -280,7 +280,12 @@ ha-card[data-filter-style="dropdown"] .fselect { display: flex; }
 .due.overdue { color: var(--error-color); font-weight: 600; }
 .prio-high { color: var(--error-color); }
 .tag { padding: 1px 8px; border-radius: 10px; background: rgba(127, 127, 127, 0.15); font-size: 0.85rem; }
-.chips { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; max-width: 45%; flex: none; }
+/* One line only: _fitChips() hides what doesn't fit and shows "+n" in the last spot. */
+.chips { display: flex; flex-wrap: nowrap; gap: 6px; max-width: 45%; flex: none; overflow: hidden; }
+.chips > * { flex: none; }
+.chips > [hidden] { display: none; }
+.pchip.more { padding: 0 10px; font-weight: 500; background: rgba(127, 127, 127, 0.18);
+  border-color: var(--divider-color); }
 .pchip { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px 0 3px;
   border-radius: 18px; background: color-mix(in srgb, var(--chip-color) 20%, transparent);
   border: 1.5px solid var(--chip-color); color: var(--primary-text-color); font-size: 0.95rem; white-space: nowrap; }
@@ -434,10 +439,12 @@ class FamilyTasksCard extends HTMLElement {
 
   connectedCallback() {
     if (this._hass && this._config && !this._subToken) this._subscribe();
+    if (this._resizeObs) this._resizeObs.observe(this._listEl);
   }
 
   disconnectedCallback() {
     this._unsubscribe();
+    if (this._resizeObs) this._resizeObs.disconnect();
   }
 
   getCardSize() {
@@ -680,6 +687,15 @@ class FamilyTasksCard extends HTMLElement {
     this._filtersEl = h("div", { class: "filters", role: "toolbar", "aria-label": "Filter by person" });
     this._fselectEl = h("div", { class: "fselect" });
     this._listEl = h("div", { class: "list" });
+    this._listWidth = 0;
+    this._resizeObs = new ResizeObserver((entries) => {
+      const w = Math.round(entries[entries.length - 1].contentRect.width);
+      if (w !== this._listWidth) {
+        this._listWidth = w;
+        this._fitChips();
+      }
+    });
+    this._resizeObs.observe(this._listEl);
     this._card = h(
       "ha-card",
       null,
@@ -842,6 +858,7 @@ class FamilyTasksCard extends HTMLElement {
       rows.push(this._row(t));
     }
     el.replaceChildren(...rows);
+    this._fitChips();
   }
 
   _row(t) {
@@ -902,8 +919,40 @@ class FamilyTasksCard extends HTMLElement {
         h("div", { class: "summary" }, t.parent_uid ? "↳ " : "", t.summary || "(untitled)"),
         meta.length ? h("div", { class: "meta" }, meta) : null,
       ),
-      h("div", { class: "chips" }, this._taskPeople(t).map((p) => this._personChip(p))),
+      this._chipRow(this._taskPeople(t)),
     );
+  }
+
+  /** Person chips plus a hidden "+n" chip; _fitChips() decides what shows. */
+  _chipRow(people) {
+    const chips = people.map((p) => this._personChip(p));
+    const more = h("span", { class: "pchip more", hidden: true });
+    const row = h("div", { class: "chips" }, chips, more);
+    row._names = people.map((p) => this._personName(p));
+    return row;
+  }
+
+  /** Keep each row's chips on one line, replacing the overflow with "+n". */
+  _fitChips() {
+    if (!this._listEl) return;
+    for (const row of this._listEl.querySelectorAll(".chips")) {
+      const more = row.lastElementChild;
+      const chips = Array.from(row.children).slice(0, -1);
+      for (const c of chips) c.hidden = false;
+      more.hidden = true;
+      if (!row.clientWidth || row.scrollWidth <= row.clientWidth) continue; // fits, or not laid out yet
+      more.hidden = false;
+      let shown = chips.length;
+      while (shown > 0) {
+        chips[shown - 1].hidden = true;
+        shown--;
+        more.textContent = `+${chips.length - shown}`;
+        if (row.scrollWidth <= row.clientWidth) break;
+      }
+      const hiddenNames = row._names.slice(shown);
+      more.title = hiddenNames.join(", ");
+      more.setAttribute("aria-label", `and ${hiddenNames.length} more: ${hiddenNames.join(", ")}`);
+    }
   }
 }
 
