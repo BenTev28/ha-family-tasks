@@ -136,6 +136,9 @@
     },
     "unsupported_field": {
       "message": "{service} cannot store: {fields}."
+    },
+    "refresh_failed": {
+      "message": "Couldn't reach the task service. Check the Home Assistant log for details."
     }
   },
   "services": {
@@ -272,6 +275,16 @@
         "due": {
           "name": "Due",
           "description": "Filter by due date."
+        }
+      }
+    },
+    "refresh": {
+      "name": "Refresh",
+      "description": "Fetch the latest tasks from the service now, instead of waiting for the next poll.",
+      "fields": {
+        "list": {
+          "name": "List",
+          "description": "Refresh the account this list is on. Leave empty to refresh every Family Tasks account."
         }
       }
     }

@@ -16,10 +16,11 @@ import aiohttp
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_PASSWORD, CONF_URL, CONF_USERNAME, CONF_VERIFY_SSL
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_capture_events
 
+from custom_components.family_tasks.backends.base import BackendConnectionError
 from custom_components.family_tasks.backends.caldav.client import CalDavClient, PreconditionFailed
 from custom_components.family_tasks.const import (
     CONF_ASSIGNEES,
@@ -337,6 +338,32 @@ async def test_remote_delete_detected_via_sync(hass: HomeAssistant, entry, accou
         await _req(session, "DELETE", f"{account['base']}{account['list']}phone.ics", account["user"])
     await _coord(entry).async_refresh()
     assert await _get_tasks(hass) == []
+
+
+async def test_refresh_action_fetches_now(hass: HomeAssistant, entry, account) -> None:
+    await _remote_put(account, "phone.ics", SAMPLE)
+    assert await _get_tasks(hass) == []  # not polled yet
+    await hass.services.async_call(DOMAIN, "refresh", {"list": LIST}, blocking=True)
+    assert [t["uid"] for t in await _get_tasks(hass)] == ["7340213419562178372"]
+    async with aiohttp.ClientSession() as session:
+        await _req(session, "DELETE", f"{account['base']}{account['list']}phone.ics", account["user"])
+    await hass.services.async_call(DOMAIN, "refresh", {}, blocking=True)  # every account
+    assert await _get_tasks(hass) == []
+
+
+async def test_refresh_unknown_list_rejected(hass: HomeAssistant, entry) -> None:
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(DOMAIN, "refresh", {"list": "todo.not_ours"}, blocking=True)
+
+
+async def test_refresh_failure_raises_without_details(hass: HomeAssistant, entry, monkeypatch) -> None:
+    async def unreachable(*args, **kwargs):
+        raise BackendConnectionError("https://user:pw@dav.example/ unreachable")
+
+    monkeypatch.setattr(_coord(entry).backend, "async_fetch", unreachable)
+    with pytest.raises(HomeAssistantError, match="Couldn't reach the task service") as err:
+        await hass.services.async_call(DOMAIN, "refresh", {"list": LIST}, blocking=True)
+    assert "dav.example" not in str(err.value)
 
 
 async def test_delete_task(hass: HomeAssistant, entry, account) -> None:

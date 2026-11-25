@@ -14,6 +14,7 @@
     "complete_task": { "service": "mdi:clipboard-check-outline" },
     "reopen_task": { "service": "mdi:clipboard-arrow-left-outline" },
     "delete_task": { "service": "mdi:clipboard-remove-outline" },
-    "get_tasks": { "service": "mdi:clipboard-search-outline" }
+    "get_tasks": { "service": "mdi:clipboard-search-outline" },
+    "refresh": { "service": "mdi:refresh" }
   }
 }
