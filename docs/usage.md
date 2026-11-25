@@ -2,6 +2,28 @@
 
 Everything on this page works the same for every task service. If a service can't store something (for example, a due *time* on a date-only service), the card hides that control. An action that tries to set it fails with a clear message instead of silently dropping it. To see what each service supports, check [the mapping table](ARCHITECTURE.md#4-service-mappings).
 
+## Installing and updating
+
+Install Family Tasks from the **Marketplace** (Home Assistant 2026.11 and later) or HACS, as described in the [README](../README.md#install). Updates then appear under **Settings → System → Updates**, like any other update. Install them there and restart Home Assistant. If the card doesn't change after an update, hard-refresh the browser (Ctrl+Shift+R, or clear the app's cache on a phone).
+
+### Beta versions (the Pre-release switch)
+
+Betas (versions like `0.1.0b2`) are published as GitHub pre-releases. The Marketplace ignores them unless you opt in:
+
+- **With the switch off (the default):** you get final releases only. While there is no final release yet, the Marketplace installs the latest code on the main branch instead. The installed version then shows as a commit ID such as `7bed2f7`, and you may miss fixes that are only in a beta.
+- **With the switch on:** betas are offered as updates too.
+
+To turn it on:
+
+1. Open **Settings → Devices & services → Marketplace**, and open the **Family Tasks** device.
+2. The **Pre-release** switch is disabled by default, so it's hidden. Click **+1 entity not shown**, open **Pre-release**, then the settings cog, turn on **Enabled** and click **Update**. Home Assistant takes about 30 seconds to make it available.
+3. Turn the **Pre-release** switch on.
+4. Go to **Settings → System → Updates**. If the beta doesn't appear yet, open ⋮ → **Check for updates**.
+
+To go back to final releases only, turn the switch off. You stay on the beta you have until a newer final release comes out.
+
+If you use HACS, open Family Tasks in HACS and use its **Pre-release** switch (or "Show beta versions" in older HACS versions) instead.
+
 ## Options
 
 Open **Settings → Devices & services → Family Tasks → Configure**.
