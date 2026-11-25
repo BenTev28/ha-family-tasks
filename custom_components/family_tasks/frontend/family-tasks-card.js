@@ -234,10 +234,11 @@ ha-card { display: flex; flex-direction: column; height: 100%; overflow: hidden;
   color: var(--text-primary-color, #fff); }
 /* Person filter as a dropdown: a styled face with a transparent native <select>
    on top, so phones get their own picker. Shown instead of the chips when
-   filter_style is "dropdown", or "auto" on a narrow card. */
+   filter_style is "dropdown", or "auto" when the chips don't fit (_fitFilters). */
 .fselect { display: none; position: relative; flex: none; align-items: center; gap: 8px; min-height: 48px;
   margin: 4px 16px 12px; padding: 0 12px 0 16px; border-radius: 24px;
   border: 2px solid var(--chip-color, var(--divider-color)); color: var(--primary-text-color); font-size: 1rem; }
+.fselect { max-width: 480px; }
 .fselect.has-avatar { padding-left: 6px; }
 .fselect .flabel-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fselect .chev { flex: none; color: var(--secondary-text-color); }
@@ -246,10 +247,8 @@ ha-card { display: flex; flex-direction: column; height: 100%; overflow: hidden;
 .fselect:focus-within { outline: 2px solid var(--primary-color); outline-offset: 2px; }
 ha-card[data-filter-style="dropdown"] .filters { display: none; }
 ha-card[data-filter-style="dropdown"] .fselect { display: flex; }
-@container (max-width: 800px) {
-  ha-card[data-filter-style="auto"] .filters { display: none; }
-  ha-card[data-filter-style="auto"] .fselect { display: flex; }
-}
+ha-card[data-filter-style="auto"][data-filter-fit="dropdown"] .filters { display: none; }
+ha-card[data-filter-style="auto"][data-filter-fit="dropdown"] .fselect { display: flex; }
 .count { min-width: 24px; height: 24px; padding: 0 6px; border-radius: 12px; background: rgba(127, 127, 127, 0.22);
   font-size: 0.85rem; display: inline-flex; align-items: center; justify-content: center; }
 
@@ -692,6 +691,7 @@ class FamilyTasksCard extends HTMLElement {
       const w = Math.round(entries[entries.length - 1].contentRect.width);
       if (w !== this._listWidth) {
         this._listWidth = w;
+        this._fitFilters();
         this._fitChips();
       }
     });
@@ -784,6 +784,17 @@ class FamilyTasksCard extends HTMLElement {
       mk("unassigned", "Unassigned"),
     );
     this._renderFilterSelect(counts, active);
+    this._fitFilters();
+  }
+
+  /** In auto style, use the dropdown when the person buttons don't fit on one line. */
+  _fitFilters() {
+    const card = this._card;
+    if (!card || card.dataset.filterStyle !== "auto") return;
+    const f = this._filtersEl;
+    card.dataset.filterFit = "chips"; // lay the chips out to measure them (no paint in between)
+    if (!f.clientWidth) return; // not laid out yet; the resize observer calls back
+    card.dataset.filterFit = f.scrollWidth > f.clientWidth + 1 ? "dropdown" : "chips";
   }
 
   _renderFilterSelect(counts, active) {
@@ -1500,7 +1511,7 @@ class FamilyTasksCardEditor extends HTMLElement {
     this._filterStyle = h(
       "select",
       { onchange: (e) => this._change("filter_style", e.target.value === "auto" ? "" : e.target.value) },
-      h("option", { value: "auto" }, "Automatic (dropdown on phones and portrait tablets)"),
+      h("option", { value: "auto" }, "Automatic (dropdown when the buttons don't fit)"),
       h("option", { value: "chips" }, "Buttons"),
       h("option", { value: "dropdown" }, "Dropdown"),
     );
