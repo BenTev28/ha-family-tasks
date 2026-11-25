@@ -12,7 +12,7 @@
  * All user-supplied text is inserted with textContent / text nodes, never innerHTML.
  */
 
-const CARD_VERSION = "0.1.0";
+const CARD_VERSION = "0.1.0b2"; // must equal const.VERSION (tests/test_version.py)
 const DOMAIN = "family_tasks";
 const DAYS = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -232,6 +232,24 @@ ha-card { display: flex; flex-direction: column; height: 100%; overflow: hidden;
 .fchip.has-avatar { padding-left: 6px; }
 .fchip.active { background: var(--chip-color, var(--primary-color)); border-color: var(--chip-color, var(--primary-color));
   color: var(--text-primary-color, #fff); }
+/* Person filter as a dropdown: a styled face with a transparent native <select>
+   on top, so phones get their own picker. Shown instead of the chips when
+   filter_style is "dropdown", or "auto" on a narrow card. */
+.fselect { display: none; position: relative; flex: none; align-items: center; gap: 8px; min-height: 48px;
+  margin: 4px 16px 12px; padding: 0 12px 0 16px; border-radius: 24px;
+  border: 2px solid var(--chip-color, var(--divider-color)); color: var(--primary-text-color); font-size: 1rem; }
+.fselect.has-avatar { padding-left: 6px; }
+.fselect .flabel-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fselect .chev { flex: none; color: var(--secondary-text-color); }
+.fselect select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer;
+  font-size: 1rem; border: none; }
+.fselect:focus-within { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+ha-card[data-filter-style="dropdown"] .filters { display: none; }
+ha-card[data-filter-style="dropdown"] .fselect { display: flex; }
+@container (max-width: 800px) {
+  ha-card[data-filter-style="auto"] .filters { display: none; }
+  ha-card[data-filter-style="auto"] .fselect { display: flex; }
+}
 .count { min-width: 24px; height: 24px; padding: 0 6px; border-radius: 12px; background: rgba(127, 127, 127, 0.22);
   font-size: 0.85rem; display: inline-flex; align-items: center; justify-content: center; }
 
@@ -660,12 +678,14 @@ class FamilyTasksCard extends HTMLElement {
       h("span", null, "Add"),
     );
     this._filtersEl = h("div", { class: "filters", role: "toolbar", "aria-label": "Filter by person" });
+    this._fselectEl = h("div", { class: "fselect" });
     this._listEl = h("div", { class: "list" });
     this._card = h(
       "ha-card",
       null,
       h("div", { class: "header" }, this._titleEl, h("div", { class: "hactions" }, this._refreshBtn, this._sortBtn, this._addBtn)),
       this._filtersEl,
+      this._fselectEl,
       this._listEl,
     );
     this._dialogHost = h("div");
@@ -694,6 +714,8 @@ class FamilyTasksCard extends HTMLElement {
     if (!this._built || !this._config) return;
     const title = this._config.title !== undefined ? this._config.title : this._listName();
     this._titleEl.textContent = title;
+    const fs = this._config.filter_style;
+    this._card.dataset.filterStyle = fs === "chips" || fs === "dropdown" ? fs : "auto";
     this._sortBtn.replaceChildren(
       icon(this._sort === "due" ? "mdi:calendar-clock" : "mdi:account-multiple"),
       h("span", null, this._sort === "due" ? "By date" : "By person"),
@@ -744,6 +766,47 @@ class FamilyTasksCard extends HTMLElement {
       mk("everyone", "Everyone"),
       ...this._people().map((p) => mk(p.tag, this._personName(p), p)),
       mk("unassigned", "Unassigned"),
+    );
+    this._renderFilterSelect(counts, active);
+  }
+
+  _renderFilterSelect(counts, active) {
+    // Rebuilding while the picker is open would close it; catch up on the next render.
+    const open = this._fselectEl.querySelector("select");
+    if (open && this.shadowRoot.activeElement === open) return;
+    const people = this._people();
+    const withCount = (label, key) => (counts[key] ? `${label} (${counts[key]})` : label);
+    const choices = [
+      { value: "everyone", label: "Everyone" },
+      ...people.map((p) => ({ value: p.tag, label: this._personName(p), person: p })),
+      { value: "unassigned", label: "Unassigned" },
+    ];
+    const cur = choices.find((c) => String(c.value).toLowerCase() === active) || choices[0];
+    const select = h(
+      "select",
+      {
+        "aria-label": "Show tasks for",
+        onchange: (e) => {
+          e.target.blur();
+          this._setFilter(e.target.value);
+        },
+      },
+      choices.map((c) =>
+        h("option", { value: c.value }, withCount(c.label, String(c.value).toLowerCase())),
+      ),
+    );
+    select.value = cur.value;
+    const el = this._fselectEl;
+    el.className = `fselect${cur.person ? " has-avatar" : ""}`;
+    el.style.setProperty("--chip-color", cur.person ? safeColor(cur.person.color) : "");
+    el.replaceChildren(
+      cur.person ? this._avatar(cur.person, "sm") : icon("mdi:account-multiple"),
+      h("span", { class: "flabel-text" }, cur.label),
+      counts[String(cur.value).toLowerCase()]
+        ? h("span", { class: "count" }, String(counts[String(cur.value).toLowerCase()]))
+        : null,
+      h("ha-icon", { class: "chev", icon: "mdi:menu-down" }),
+      select,
     );
   }
 
@@ -1385,6 +1448,13 @@ class FamilyTasksCardEditor extends HTMLElement {
       (ft.people || []).map((p) => h("option", { value: p.tag }, p.name || p.tag)),
       h("option", { value: "unassigned" }, "Unassigned"),
     );
+    this._filterStyle = h(
+      "select",
+      { onchange: (e) => this._change("filter_style", e.target.value === "auto" ? "" : e.target.value) },
+      h("option", { value: "auto" }, "Automatic (dropdown on phones and portrait tablets)"),
+      h("option", { value: "chips" }, "Buttons"),
+      h("option", { value: "dropdown" }, "Dropdown"),
+    );
     this._showDone = h("input", {
       type: "checkbox",
       onchange: (e) => this._change("show_completed", e.target.checked ? "" : false),
@@ -1399,6 +1469,7 @@ class FamilyTasksCardEditor extends HTMLElement {
         h("label", null, "Title", this._title),
         h("label", null, "Sort by", this._sort),
         h("label", null, "Start with filter", this._filter),
+        h("label", null, "Person filter style", this._filterStyle),
         h("label", { class: "inline" }, this._showDone, "Show recently completed tasks"),
         h(
           "div",
@@ -1423,6 +1494,7 @@ class FamilyTasksCardEditor extends HTMLElement {
     set(this._title, c.title || "");
     set(this._sort, c.sort || "due");
     set(this._filter, c.default_filter || "everyone");
+    set(this._filterStyle, c.filter_style || "auto");
     this._showDone.checked = c.show_completed !== false;
   }
 }

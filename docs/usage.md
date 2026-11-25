@@ -86,9 +86,12 @@ title: Family tasks      # optional
 sort: due                # due | person
 show_completed: true
 default_filter: everyone # everyone | unassigned | <tag>
+filter_style: auto       # auto | chips | dropdown
 ```
 
 Changes made in Home Assistant show up straight away. Changes made elsewhere (a phone, the service's own web app) arrive at the next poll, set by **Poll interval** in the options. To fetch them sooner, tap the card's **Sync now** button (⟳), or call `family_tasks.refresh` from an automation.
+
+The person filter is a row of buttons on a wide card, and a dropdown on a narrow one: under 800 px, which covers phones and tablets in portrait. The switch follows the card's width, not the screen's. Set `filter_style: chips` or `filter_style: dropdown` to always use one style.
 
 The card has a visual editor, and it follows your theme in light and dark mode. Person chips use the colour from the options and the person's picture. Fields that a service only stores in Home Assistant, not on the service itself, are labelled "Home Assistant only".
 
