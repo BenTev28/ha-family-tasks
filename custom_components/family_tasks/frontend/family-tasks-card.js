@@ -12,7 +12,7 @@
  * All user-supplied text is inserted with textContent / text nodes, never innerHTML.
  */
 
-const CARD_VERSION = "0.1.0b2"; // must equal const.VERSION (tests/test_version.py)
+const CARD_VERSION = "0.1.0b3"; // must equal const.VERSION (tests/test_version.py)
 const DOMAIN = "family_tasks";
 const DAYS = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
